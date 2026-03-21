@@ -5,10 +5,13 @@
     "outDir": "dist",
     "module": "preserve",
     "declaration": true,
+    "allowImportingTsExtensions": false,
+    "noEmit": false,
     "moduleResolution": "bundler",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun", "node"],
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

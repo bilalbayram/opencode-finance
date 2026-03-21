@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { OpenCodeFinanceInternal } from "../../src/index"
+import { reportExecutionConstraintLines } from "../../src/internal/report-execution-constraints"
 
 describe("finance plugin report runtime hints", () => {
   test("includes explicit report_pdf subcommand for /report execution constraints", () => {
-    const lines = OpenCodeFinanceInternal.reportExecutionConstraintLines({
+    const lines = reportExecutionConstraintLines({
       outputRoot: "/tmp/reports/AAPL/2026-02-26",
       focus: "valuation",
       quiverSetupHint: "setup-command",

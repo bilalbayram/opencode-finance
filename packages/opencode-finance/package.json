@@ -1,27 +1,32 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-finance",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/bilalbayram/opencode.finance"
   },
+  "files": ["dist", "README.md"],
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "build": "tsc",
-    "test": "bun test ./test",
-    "prepack": "cp ../../README.md README.md",
+    "build": "node ./scripts/build.mjs",
+    "test": "bun run build && bun test ./test",
+    "prepack": "bun run build && cp ../../README.md README.md",
     "postpack": "rm -f README.md"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.1.65",
-    "@opencode-ai/sdk": "1.1.65",
+    "@opencode-ai/plugin": "1.2.27",
+    "@opencode-ai/sdk": "1.2.27",
     "pdf-lib": "1.17.1",
     "xdg-basedir": "5.1.0",
     "zod": "4.1.8"

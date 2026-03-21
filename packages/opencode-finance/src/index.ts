@@ -14,6 +14,7 @@ import { ReportDarkpoolAnomalyTool } from "./tool/report-darkpool"
 import { FinancialPoliticalBacktestTool } from "./tool/financial-political-backtest"
 import { ReportPdfTool } from "./tool/pdf"
 import { Env } from "./env"
+import { reportExecutionConstraintLines } from "./internal/report-execution-constraints"
 import PROMPT_FINANCE from "./prompt/finance.txt"
 
 const REQUIRED_PROVIDER = ["alphavantage", "sec-edgar"] as const
@@ -61,18 +62,6 @@ function reportRoot(
   date = new Date().toISOString().slice(0, 10),
 ) {
   return path.join(root(context), "reports", ticker, date)
-}
-
-function reportExecutionConstraintLines(input: { outputRoot: string; focus: string; quiverSetupHint: string }) {
-  return [
-    "Execution constraints for this `/report` run:",
-    `- Write artifacts only under \`${input.outputRoot}\`.`,
-    ...(input.focus ? [`- Focus area for this run: \`${input.focus}\`.`] : []),
-    '- Use `financial_search` with `coverage: "comprehensive"` for numeric claims.',
-    "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
-    `- If Quiver setup is missing, instruct: ${input.quiverSetupHint}.`,
-    '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
-  ]
 }
 
 function parseArgs(input: string) {
@@ -390,9 +379,3 @@ export const QuiverQuantAuthPlugin = authPlugin({
     }
   },
 })
-
-export const OpenCodeFinanceInternal = {
-  reportExecutionConstraintLines,
-}
-
-export default OpenCodeFinancePlugin

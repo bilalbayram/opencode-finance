@@ -7,10 +7,10 @@
     },
     "packages/opencode-finance": {
       "name": "opencode-finance",
-      "version": "1.1.65",
+      "version": "1.2.6",
       "dependencies": {
-        "@opencode-ai/plugin": "1.1.65",
-        "@opencode-ai/sdk": "1.1.65",
+        "@opencode-ai/plugin": "1.2.27",
+        "@opencode-ai/sdk": "1.2.27",
         "pdf-lib": "1.17.1",
         "xdg-basedir": "5.1.0",
         "zod": "4.1.8",
@@ -25,7 +25,7 @@
     },
     "packages/web": {
       "name": "@opencode-ai/web",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "dependencies": {
         "astro": "5.7.13",
       },
@@ -149,9 +149,9 @@
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.1.65", "", { "dependencies": { "@opencode-ai/sdk": "1.1.65", "zod": "4.1.8" } }, "sha512-wG9B4HtD3cOAM36UEeWgrZ0A6BCRr6pYbH2XG7/AWF6wEJVvz8TT256+4TNUuNaIDE3RP9X5Sf7g0hKFviGD0g=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.2.27", "", { "dependencies": { "@opencode-ai/sdk": "1.2.27", "zod": "4.1.8" } }, "sha512-h+8Bw9v9nghMg7T+SUCTzxlIhOrsTqXW7U0HVLGQST5DjbN7uyCUM51roZWZ8LRjGxzbzFhvPnY1bj8i+ioZyw=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.1.65", "", {}, "sha512-XlpgQJQ5WwO4tYgyyHoTT0NAB5/1StXonabVUAYVpW0JdtbwWFSdFEaLkWx6CU7MNW6ELP+SMC4n6wWO6zRW8Q=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.2.27", "", {}, "sha512-Wk0o/I+Fo+wE3zgvlJDs8Fb67KlKqX0PrV8dK5adSDkANq6r4Z25zXJg2iOir+a8ntg3rAcpel1OY4FV/TwRUA=="],
 
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
 
