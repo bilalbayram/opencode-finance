@@ -7,20 +7,20 @@ export type DetectionThresholds = {
   high: number
 }
 
-export type RawObservation = {
+type RawObservation = {
   date: string
   value: number
   row_count: number
 }
 
-export type ParsedDataset = {
+type ParsedDataset = {
   metric_key: string
   metric_label: string
   date_key: string
   observations: RawObservation[]
 }
 
-export type RobustStats = {
+type RobustStats = {
   center: number
   dispersion: number
   median: number
@@ -301,7 +301,7 @@ function median(input: number[]) {
   return quantile(sorted, 0.5)
 }
 
-export function computeRobustStats(values: number[]): RobustStats {
+function computeRobustStats(values: number[]): RobustStats {
   if (values.length === 0) {
     throw new Error("cannot compute baseline from empty samples")
   }

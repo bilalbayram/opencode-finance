@@ -11,9 +11,9 @@ export const FINANCE_AUTH_PROVIDER_ID = [
 
 export type FinanceAuthProviderID = (typeof FINANCE_AUTH_PROVIDER_ID)[number]
 
-export type FinanceCredentialType = "none" | "api" | "identity"
+type FinanceCredentialType = "none" | "api" | "identity"
 
-export interface FinanceAuthProvider {
+interface FinanceAuthProvider {
   id: FinanceAuthProviderID
   name: string
   hint?: string
@@ -21,7 +21,7 @@ export interface FinanceAuthProvider {
   env: string[]
 }
 
-export const FINANCE_AUTH_PROVIDERS: FinanceAuthProvider[] = [
+const FINANCE_AUTH_PROVIDERS: FinanceAuthProvider[] = [
   {
     id: "yfinance",
     name: "Yahoo Finance",
@@ -85,6 +85,3 @@ export const FINANCE_AUTH_PROVIDER = Object.fromEntries(FINANCE_AUTH_PROVIDERS.m
   FinanceAuthProvider
 >
 
-export function isFinanceAuthProviderID(value: string): value is FinanceAuthProviderID {
-  return FINANCE_AUTH_PROVIDER_ID.includes(value as FinanceAuthProviderID)
-}

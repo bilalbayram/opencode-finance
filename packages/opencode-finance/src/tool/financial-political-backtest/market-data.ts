@@ -112,9 +112,9 @@ export async function fetchYahooDailyBars(input: {
     return parseChartBars({ symbol: input.symbol, payload })
 }
 
-export async function fetchSector(input: { ticker: string; signal?: AbortSignal }): Promise<string | null> {
+export async function fetchSector(input: { symbol: string; signal?: AbortSignal }): Promise<string | null> {
     const modules = "assetProfile"
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(input.ticker)}?modules=${encodeURIComponent(modules)}`
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(input.symbol)}?modules=${encodeURIComponent(modules)}`
     const response = await fetch(url, {
         signal: input.signal,
         headers: {

@@ -3,9 +3,7 @@ import { endpointMinimumPlan } from "../../finance/quiver-tier"
 import type * as QuiverReport from "../../finance/providers/quiver-report"
 import { computeGovernmentTradingDelta } from "../../finance/government-trading/delta"
 import type { DatasetSnapshot, PersistenceTrend, ReportGovernmentTradingMode } from "./types"
-
-const LOGIN_HINT =
-    "curl -fsSL https://opencode.finance/install.sh | bash (recommended) or run `opencode auth login` and select `quiver-quant`"
+import { LOGIN_HINT } from "../_shared/resolve-auth"
 
 const MAX_PERSISTENCE_ROWS_IN_ARTIFACTS = 75
 
@@ -34,10 +32,10 @@ export function projectDatasetSnapshots(input: {
             id: dataset.id,
             label: dataset.label,
             endpoint: dataset.endpoint,
-            endpoint_tier: dataset.endpoint_tier,
+            endpointTier: dataset.endpointTier,
             status: dataset.status,
             timestamp: dataset.timestamp,
-            source_url: dataset.source_url,
+            sourceUrl: dataset.sourceUrl,
             row_count: dataset.rows.length,
             error: dataset.error,
         })
@@ -51,10 +49,10 @@ export function projectDatasetSnapshots(input: {
                 id: dataset.id,
                 label: dataset.label,
                 endpoint: dataset.endpoint,
-                endpoint_tier: dataset.endpoint_tier,
+                endpointTier: dataset.endpointTier,
                 status: dataset.status,
                 timestamp: dataset.timestamp,
-                source_url: dataset.source_url,
+                sourceUrl: dataset.sourceUrl,
                 row_count: dataset.rows.length,
                 error: dataset.error,
             })
@@ -102,7 +100,7 @@ export function sourceAttributionLines(snapshots: DatasetSnapshot[]) {
         })
         .map((snapshot) => {
             const scope = snapshot.scope === "ticker" ? `ticker:${snapshot.ticker}` : "global"
-            return `- ${scope} | ${snapshot.label} (${snapshot.id}) | rows=${snapshot.row_count} | retrieved_at=${snapshot.timestamp} | source=${snapshot.source_url}`
+            return `- ${scope} | ${snapshot.label} (${snapshot.id}) | rows=${snapshot.row_count} | retrieved_at=${snapshot.timestamp} | source=${snapshot.sourceUrl}`
         })
 }
 
@@ -244,7 +242,7 @@ export function buildDashboardMarkdown(input: {
     for (const snapshot of input.snapshots.toSorted((a, b) => a.id.localeCompare(b.id, "en-US"))) {
         const scope = snapshot.scope === "ticker" ? `ticker:${snapshot.ticker}` : "global"
         lines.push(
-            `| ${escapeCell(scope)} | ${escapeCell(`${snapshot.label} (${snapshot.id})`)} | ${snapshot.row_count} | ${escapeCell(snapshot.timestamp)} | ${escapeCell(snapshot.source_url)} |`,
+            `| ${escapeCell(scope)} | ${escapeCell(`${snapshot.label} (${snapshot.id})`)} | ${snapshot.row_count} | ${escapeCell(snapshot.timestamp)} | ${escapeCell(snapshot.sourceUrl)} |`,
         )
     }
 

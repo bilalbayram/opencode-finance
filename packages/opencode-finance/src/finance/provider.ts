@@ -19,7 +19,7 @@ import {
 } from "./types"
 import { createEmptyFinanceData, normalizeErrorText } from "./parser"
 
-const DEFAULT_RATE_LIMIT_STATUS = 429
+const DEFAULT_RATE_LIMIT_RETRY_MS = 60_000
 
 export interface FinanceProvider {
   readonly id: string
@@ -51,6 +51,22 @@ export class ProviderError extends Error {
   }
 }
 
+export async function withProviderFetch<T>(
+  fn: () => Promise<T>,
+  opts: { providerId: string; displayName: string; timeoutMs?: number; clearTimeout?: () => void },
+): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    opts.clearTimeout?.()
+    if (error instanceof ProviderError) throw error
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ProviderError(`${opts.displayName} request timed out`, opts.providerId, "TIMEOUT", opts.timeoutMs)
+    }
+    throw new ProviderError(normalizeErrorText(error), opts.providerId, "NETWORK")
+  }
+}
+
 export function normalizeProviderError(error: unknown, source: string): FinanceErrorShape {
   if (error instanceof ProviderError) {
     return {
@@ -67,7 +83,7 @@ export function normalizeProviderError(error: unknown, source: string): FinanceE
       source,
       message,
       code: "RATE_LIMIT",
-      retryAfterMs: DEFAULT_RATE_LIMIT_STATUS,
+      retryAfterMs: DEFAULT_RATE_LIMIT_RETRY_MS,
     }
   }
 

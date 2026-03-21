@@ -1,6 +1,5 @@
 export * from "./types"
 export * from "./errors"
-export * from "./error"
 export { resolveAnchors, splitAnchorCohorts } from "./anchor"
 export { normalizePoliticalEvents, assertUniqueEventIDs } from "./normalize"
 export { selectBenchmarks, sectorETF, POLITICAL_BACKTEST_SECTOR_ETF_MAP } from "./benchmark"

@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toNumber, toPercent, toIsoDate, rows, headquarters } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -16,57 +16,10 @@ import type {
 const FINNHUB_BASE = "https://finnhub.io/api/v1"
 const DEFAULT_TIMEOUT_MS = 12_000
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
-function toNumber(input: unknown): number | null {
-  const text = asText(input).replace(/,/g, "").trim()
-  if (!text) return null
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(value)) return null
-  return value
-}
-
-function toPercent(input: unknown): number | null {
-  const value = toNumber(input)
-  if (value === null) return null
-  if (Math.abs(value) <= 1) return Number((value * 100).toFixed(6))
-  return value
-}
-
-function toIsoDate(input: unknown): string {
-  const raw = asText(input).trim()
-  if (!raw) return new Date().toISOString()
-  const numeric = Number(raw)
-  if (Number.isFinite(numeric) && numeric > 0) {
-    const ms = numeric > 9_999_999_999 ? numeric : numeric * 1000
-    return new Date(ms).toISOString()
-  }
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString()
-  return date.toISOString()
-}
-
-function headquarters(profile: Record<string, unknown>) {
-  const city = asText(profile.city).trim()
-  const state = asText(profile.state).trim()
-  const country = asText(profile.country).trim()
-  const parts = [city, state, country].filter((item) => item.length > 0)
-  if (!parts.length) return null
-  return parts.join(", ")
-}
-
 function transactionType(delta: number): "buy" | "sell" | "other" {
   if (delta < 0) return "sell"
   if (delta > 0) return "buy"
   return "other"
-}
-
-function rows(input: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => (item && typeof item === "object" ? [item as Record<string, unknown>] : []))
 }
 
 function statementValue(rows: Record<string, unknown>[], concepts: string[]): number | null {
@@ -462,7 +415,7 @@ export class FinnhubProvider implements FinanceProvider {
   ): Promise<FinanceDataEnvelope<FinanceProviderData>> {
     const { signal, clearTimeout } = abortAfterAny(this.timeoutMs, ...(options?.signal ? [options.signal] : []))
 
-    try {
+    return withProviderFetch(async () => {
       if (input.intent === "quote") {
         const [quote, profile, metric] = await Promise.all([
           this.request("/quote", new URLSearchParams({ symbol: input.ticker }), signal),
@@ -568,13 +521,6 @@ export class FinnhubProvider implements FinanceProvider {
       }
 
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("finnhub request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

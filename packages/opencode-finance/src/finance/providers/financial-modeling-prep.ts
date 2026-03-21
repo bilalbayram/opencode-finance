@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toNumber, toPercent, toIsoDate, rows, headquarters } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -15,53 +15,11 @@ import type {
 const FMP_BASE = "https://financialmodelingprep.com/stable"
 const DEFAULT_TIMEOUT_MS = 12_000
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
-function toNumber(input: unknown): number | null {
-  const text = asText(input).replace(/,/g, "").trim()
-  if (!text) return null
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(value)) return null
-  return value
-}
-
-function toPercent(input: unknown): number | null {
-  const value = toNumber(input)
-  if (value === null) return null
-  if (Math.abs(value) <= 1) return Number((value * 100).toFixed(6))
-  return value
-}
-
-function toIsoDate(input: unknown): string {
-  const text = asText(input).trim()
-  if (!text) return new Date().toISOString()
-  const date = new Date(text)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString()
-  return date.toISOString()
-}
-
 function firstRow(input: unknown): Record<string, unknown> {
   if (!Array.isArray(input)) return {}
   const row = input[0]
   if (!row || typeof row !== "object") return {}
   return row as Record<string, unknown>
-}
-
-function rows(input: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => (item && typeof item === "object" ? [item as Record<string, unknown>] : []))
-}
-
-function headquarters(profile: Record<string, unknown>) {
-  const city = asText(profile.city).trim()
-  const state = asText(profile.state).trim()
-  const country = asText(profile.country).trim()
-  const parts = [city, state, country].filter((item) => item.length > 0)
-  if (!parts.length) return null
-  return parts.join(", ")
 }
 
 function parseRange(input: unknown) {
@@ -242,7 +200,7 @@ export class FinancialModelingPrepProvider implements FinanceProvider {
   ): Promise<FinanceDataEnvelope<FinanceProviderData>> {
     const { signal, clearTimeout } = abortAfterAny(this.timeoutMs, ...(options?.signal ? [options.signal] : []))
 
-    try {
+    return withProviderFetch(async () => {
       if (input.intent === "quote") {
         const profilePayload = await this.request(
           "/profile",
@@ -309,13 +267,6 @@ export class FinancialModelingPrepProvider implements FinanceProvider {
       }
 
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("financial-modeling-prep request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

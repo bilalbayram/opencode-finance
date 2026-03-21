@@ -1,7 +1,7 @@
-import { ProviderError } from "../provider"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
+import { asText as _asText, toNumber as _toNumber } from "../parse-helpers"
 import type {
   FinanceFundamentalsData,
   FinanceNewsData,
@@ -16,19 +16,16 @@ const ALPHA_BASE_URL = "https://www.alphavantage.co/query"
 const DEFAULT_TIMEOUT_MS = 12_000
 const DEFAULT_NEWS_LIMIT = 10
 
+/** Alpha-Vantage specific: extends shared asText with n/a stripping. */
 function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  const value = String(input).trim()
+  const value = _asText(input).trim()
   if (!value) return ""
   if (/^(none|null|n\/?a|-|unknown)$/i.test(value)) return ""
   return value
 }
 
 function toNumber(value: unknown): number | null {
-  const text = asText(value).replace(/,/g, "").trim()
-  if (!text) return null
-  const num = Number(text.replace(/[^0-9.-]/g, ""))
-  return Number.isFinite(num) ? num : null
+  return _toNumber(asText(value))
 }
 
 function parseQuote(payload: Record<string, unknown>): FinanceQuoteData {
@@ -196,7 +193,7 @@ export class AlphaVantageProvider implements FinanceProvider {
       params.set("limit", `${Math.min(input.limit, DEFAULT_NEWS_LIMIT)}`)
     }
 
-    try {
+    return withProviderFetch(async () => {
       const response = await fetch(`${ALPHA_BASE_URL}?${params.toString()}`, { signal: timeoutSignal })
       clearTimeout()
 
@@ -241,12 +238,6 @@ export class AlphaVantageProvider implements FinanceProvider {
         default:
           throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
       }
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("alpha-vantage request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      if (error instanceof ProviderError) throw error
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

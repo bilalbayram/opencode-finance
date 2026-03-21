@@ -69,7 +69,7 @@ export async function writeToolArtifacts(input: WriteToolArtifactsInput): Promis
     await Promise.all(Object.values(filePaths).map((entry) => Bun.write(entry.path, entry.content)))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed writing artifacts to ${input.outputRoot}: ${message}`)
+    throw new Error(`Failed writing artifacts to ${input.outputRoot}: ${message}`, { cause: error })
   }
 
   return Object.fromEntries(Object.entries(filePaths).map(([name, value]) => [name, value.path]))

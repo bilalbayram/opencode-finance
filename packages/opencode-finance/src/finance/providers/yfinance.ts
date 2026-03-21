@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toNumber as sharedToNumber, toPercent as sharedToPercent, toIsoDate } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -15,11 +15,7 @@ import type {
 const YAHOO_BASE = "https://query1.finance.yahoo.com"
 const DEFAULT_TIMEOUT_MS = 12_000
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
+/** Yahoo wraps some values in `{ raw: <number> }` objects. */
 function fromRaw(input: unknown): unknown {
   if (input && typeof input === "object" && "raw" in input) {
     return (input as Record<string, unknown>).raw
@@ -27,31 +23,14 @@ function fromRaw(input: unknown): unknown {
   return input
 }
 
+/** Yahoo-specific: unwraps `{ raw: ... }` before parsing. */
 function toNumber(input: unknown): number | null {
-  const text = asText(fromRaw(input)).replace(/,/g, "").trim()
-  if (!text) return null
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(value)) return null
-  return value
+  return sharedToNumber(fromRaw(input))
 }
 
+/** Yahoo-specific: unwraps `{ raw: ... }` before parsing. */
 function toPercent(input: unknown): number | null {
-  const value = toNumber(input)
-  if (value === null) return null
-  if (Math.abs(value) <= 1) return Number((value * 100).toFixed(6))
-  return value
-}
-
-function toIsoDate(input: unknown): string {
-  if (typeof input === "number") {
-    const ms = input > 999_999_999_9 ? input : input * 1000
-    return new Date(ms).toISOString()
-  }
-  if (typeof input === "string" && input.trim()) {
-    const date = new Date(input)
-    if (!Number.isNaN(date.getTime())) return date.toISOString()
-  }
-  return new Date().toISOString()
+  return sharedToPercent(fromRaw(input))
 }
 
 function parseQuote(payload: Record<string, unknown>, ticker: string): FinanceQuoteData {
@@ -252,7 +231,7 @@ export class YFinanceProvider implements FinanceProvider {
     }
     const timestamp = new Date().toISOString()
 
-    try {
+    return withProviderFetch(async () => {
       if (input.intent === "quote") {
         const url = `${YAHOO_BASE}/v7/finance/quote?symbols=${encodeURIComponent(input.ticker)}`
         const response = await fetch(url, { headers, signal })
@@ -337,13 +316,6 @@ export class YFinanceProvider implements FinanceProvider {
       }
 
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("yfinance request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

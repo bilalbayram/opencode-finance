@@ -90,7 +90,7 @@ function normalizeForStableJson(input: unknown): unknown {
   if (typeof input === "object") {
     const row = input as Record<string, unknown>
     const out: Record<string, unknown> = {}
-    for (const key of Object.keys(row).sort()) {
+    for (const key of Object.keys(row).sort((a, b) => a.localeCompare(b))) {
       out[normalizeFieldKey(key)] = normalizeForStableJson(row[key])
     }
     return out
@@ -108,7 +108,7 @@ function stableHash(input: string): string {
 
 function sortRecord(input: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const key of Object.keys(input).sort()) out[key] = input[key] ?? ""
+  for (const key of Object.keys(input).sort((a, b) => a.localeCompare(b))) out[key] = input[key] ?? ""
   return out
 }
 
@@ -201,7 +201,7 @@ function buildIdentityFields(canonicalRow: Record<string, string>, datasetId: st
 
 function buildMaterialFields(canonicalRow: Record<string, string>, datasetId: string): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const key of Object.keys(canonicalRow).sort()) {
+  for (const key of Object.keys(canonicalRow).sort((a, b) => a.localeCompare(b))) {
     if (VOLATILE_FIELD_NAMES.has(key)) continue
     out[key] = canonicalRow[key]
   }

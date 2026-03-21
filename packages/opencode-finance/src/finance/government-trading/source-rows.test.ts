@@ -7,10 +7,10 @@ function dataset(input: { id: string; label: string; rows: Record<string, unknow
     id: input.id,
     label: input.label,
     endpoint: `/beta/${input.id}`,
-    endpoint_tier: "tier_1",
+    endpointTier: "tier_1",
     status: "ok",
     timestamp: "2026-02-26T00:00:00.000Z",
-    source_url: `https://example.com/${input.id}`,
+    sourceUrl: `https://example.com/${input.id}`,
     rows: input.rows,
   }
 }

@@ -1,7 +1,7 @@
 import path from "path"
 import z from "zod"
 import { Tool } from "../tool"
-import DESCRIPTION from "./report_insiders.txt"
+import DESCRIPTION from "./report-insiders.txt"
 import { listPortfolio } from "../../finance/portfolio"
 import { normalizeTicker } from "../../finance/parser"
 import type { QuiverTier } from "../../finance/quiver-tier"

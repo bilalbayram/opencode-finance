@@ -1,4 +1,4 @@
-import { EventStudyError } from "./error"
+import { EventStudyError } from "./errors"
 import type { EventAnchor, EventAnchorMode, PoliticalEvent } from "./types"
 
 function assertDate(value: string, eventID: string, kind: "transaction" | "report") {

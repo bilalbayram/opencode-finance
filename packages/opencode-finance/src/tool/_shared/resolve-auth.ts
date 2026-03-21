@@ -8,7 +8,7 @@ import {
   type QuiverTier,
 } from "../../finance/quiver-tier"
 
-const LOGIN_HINT =
+export const LOGIN_HINT =
   "curl -fsSL https://opencode.finance/install.sh | bash (recommended) or run `opencode auth login` and select `quiver-quant`"
 
 export type ResolveQuiverAuthOptions = {

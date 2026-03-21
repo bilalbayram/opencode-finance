@@ -1,4 +1,5 @@
 import { InvalidDateError, InvalidWindowError, MissingPriceError, PriceSeriesError, SessionAlignmentError } from "./errors"
+import { toUpperSymbol } from "./symbol"
 import { getSessionByOffset } from "./trading-calendar"
 import type { CloseByDate, ComputeForwardReturnsInput, DailyClose, IsoDate, EventForwardReturnSet, WindowForwardReturn } from "./types"
 
@@ -13,7 +14,7 @@ function ensureIsoDate(value: IsoDate, field: string, details?: Record<string, u
 }
 
 function normalizeSymbol(input: string, field: string) {
-  const symbol = input.trim().toUpperCase()
+  const symbol = toUpperSymbol(input)
   if (!symbol) {
     throw new PriceSeriesError(`Missing required symbol for ${field}`)
   }

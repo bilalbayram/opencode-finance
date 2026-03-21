@@ -34,10 +34,10 @@ export type DatasetSnapshot = {
   id: string
   label: string
   endpoint: string
-  endpoint_tier: string
+  endpointTier: string
   status: QuiverReport.QuiverReportStatus
   timestamp: string
-  source_url: string
+  sourceUrl: string
   row_count: number
   error?: QuiverReport.QuiverReportError
 }

@@ -17,10 +17,10 @@ export type QuiverReportDataset = {
   id: string
   label: string
   endpoint: string
-  endpoint_tier: QuiverEndpointTier
+  endpointTier: QuiverEndpointTier
   status: QuiverReportStatus
   timestamp: string
-  source_url: string
+  sourceUrl: string
   rows: Record<string, unknown>[]
   error?: QuiverReportError
 }
@@ -215,10 +215,10 @@ async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<Qu
       id: def.id,
       label: def.label,
       endpoint: def.endpoint,
-      endpoint_tier: def.tier,
+      endpointTier: def.tier,
       status: "not_attempted_due_to_tier",
       timestamp,
-      source_url: source,
+      sourceUrl: source,
       rows: [],
     }
   }
@@ -240,10 +240,10 @@ async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<Qu
         id: def.id,
         label: def.label,
         endpoint: def.endpoint,
-        endpoint_tier: def.tier,
+        endpointTier: def.tier,
         status: "failed",
         timestamp: new Date().toISOString(),
-        source_url: source,
+        sourceUrl: source,
         rows: [],
         error: normalizeHttpError(response.status, body),
       }
@@ -253,10 +253,10 @@ async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<Qu
       id: def.id,
       label: def.label,
       endpoint: def.endpoint,
-      endpoint_tier: def.tier,
+      endpointTier: def.tier,
       status: "ok",
       timestamp: new Date().toISOString(),
-      source_url: source,
+      sourceUrl: source,
       rows: rows(payload),
     }
   } catch (error) {
@@ -264,10 +264,10 @@ async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<Qu
       id: def.id,
       label: def.label,
       endpoint: def.endpoint,
-      endpoint_tier: def.tier,
+      endpointTier: def.tier,
       status: "failed",
       timestamp: new Date().toISOString(),
-      source_url: source,
+      sourceUrl: source,
       rows: [],
       error: normalizeThrownError(error, timeoutMs),
     }

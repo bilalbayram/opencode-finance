@@ -1,4 +1,4 @@
-export type FinanceSlashCommand = {
+type FinanceSlashCommand = {
   name: string
   description: string
   template: string

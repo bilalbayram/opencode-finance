@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toNumber, toIsoDate, rows } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -15,37 +15,6 @@ import type {
 
 const POLYGON_BASE = "https://api.polygon.io"
 const DEFAULT_TIMEOUT_MS = 12_000
-
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
-function toNumber(input: unknown): number | null {
-  const text = asText(input).replace(/,/g, "").trim()
-  if (!text) return null
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(value)) return null
-  return value
-}
-
-function toIsoDate(input: unknown): string {
-  const raw = asText(input).trim()
-  if (!raw) return new Date().toISOString()
-  const numeric = Number(raw)
-  if (Number.isFinite(numeric) && numeric > 0) {
-    const ms = numeric > 9_999_999_999 ? numeric : numeric * 1000
-    return new Date(ms).toISOString()
-  }
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString()
-  return date.toISOString()
-}
-
-function rows(input: unknown) {
-  if (!Array.isArray(input)) return [] as Record<string, unknown>[]
-  return input.flatMap((item) => (item && typeof item === "object" ? [item as Record<string, unknown>] : []))
-}
 
 function transactionType(input: string): "buy" | "sell" | "other" {
   if (input.includes("sale") || input.includes("sell")) return "sell"
@@ -398,7 +367,7 @@ export class PolygonProvider implements FinanceProvider {
   ): Promise<FinanceDataEnvelope<FinanceProviderData>> {
     const { signal, clearTimeout } = abortAfterAny(this.timeoutMs, ...(options?.signal ? [options.signal] : []))
 
-    try {
+    return withProviderFetch(async () => {
       if (input.intent === "quote") {
         const now = new Date()
         const oneYear = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 370)
@@ -515,13 +484,6 @@ export class PolygonProvider implements FinanceProvider {
       }
 
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("polygon request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

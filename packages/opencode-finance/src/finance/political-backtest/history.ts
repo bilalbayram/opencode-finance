@@ -1,6 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
-import { EventStudyError } from "./error"
+import { EventStudyError } from "./errors"
 import type { AggregateWindow } from "./types"
 
 export type BacktestRunSnapshot = {

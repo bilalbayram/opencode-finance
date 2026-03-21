@@ -145,7 +145,7 @@ export function renderReport(input: {
     for (const ticker of input.tickers) {
         const a = ticker.analysis
         lines.push(
-            `| ${ticker.ticker} | ${a.current_date} | ${formatNumber(a.current_value, 3)} | ${formatNumber(a.baseline_center, 3)} | ${formatNumber(a.baseline_dispersion, 3)} | ${formatNumber(a.z_score, 3)} | ${a.direction} | quiver-quant | ${ticker.source_url} | ${ticker.retrieved_at} |`,
+            `| ${ticker.ticker} | ${a.current_date} | ${formatNumber(a.current_value, 3)} | ${formatNumber(a.baseline_center, 3)} | ${formatNumber(a.baseline_dispersion, 3)} | ${formatNumber(a.z_score, 3)} | ${a.direction} | quiver-quant | ${ticker.sourceUrl} | ${ticker.retrieved_at} |`,
         )
     }
 
@@ -179,7 +179,7 @@ export function renderEvidenceMarkdown(input: {
             `- baseline_dispersion: ${formatNumber(item.analysis.baseline_dispersion, 6)}`,
             `- z_score: ${formatNumber(item.analysis.z_score, 6)}`,
             `- significant: ${item.analysis.significant}`,
-            `- source_url: ${item.source_url}`,
+            `- source_url: ${item.sourceUrl}`,
             `- retrieved_at: ${item.retrieved_at}`,
         )
     })

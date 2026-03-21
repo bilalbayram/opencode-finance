@@ -21,7 +21,7 @@ export type DarkpoolMetadata = {
 
 export type TickerRun = {
   ticker: string
-  source_url: string
+  sourceUrl: string
   retrieved_at: string
   row_count: number
   analysis: TickerAnalysis

@@ -1,4 +1,4 @@
-import { EventStudyError } from "./error"
+import { EventStudyError } from "./errors"
 import type { BenchmarkMode, BenchmarkSelection } from "./types"
 
 const DEFAULT_SECTOR_ETF_MAP: Record<string, string> = {

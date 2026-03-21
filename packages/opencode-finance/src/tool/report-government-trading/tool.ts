@@ -1,7 +1,7 @@
 import path from "path"
 import z from "zod"
 import { Tool } from "../tool"
-import DESCRIPTION from "./report_government_trading.txt"
+import DESCRIPTION from "./report-government-trading.txt"
 import { normalizeTicker } from "../../finance/parser"
 import { computeGovernmentTradingDelta } from "../../finance/government-trading/delta"
 import { loadGovernmentTradingHistory } from "../../finance/government-trading/history"

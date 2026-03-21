@@ -1,4 +1,4 @@
-import { EventStudyError } from "./error"
+import { EventStudyError } from "./errors"
 import { normalizeQuiverRows } from "./normalize-quiver-events"
 import type { PoliticalEvent } from "./types"
 

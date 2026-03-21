@@ -1,3 +1,4 @@
+import { asText, toNumber, toDateOnly } from "../parse-helpers"
 import { ProviderError } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
@@ -13,26 +14,7 @@ import { fetchInsiders, fetchTickerAlt, fetchTickerGovTrading, type QuiverReport
 
 const DEFAULT_TIMEOUT_MS = 12_000
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
-function toNumber(input: unknown): number {
-  const text = asText(input).replace(/,/g, "").trim()
-  if (!text) return 0
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(value)) return 0
-  return value
-}
-
-function toIsoDate(input: unknown): string {
-  const text = asText(input)
-  if (!text) return new Date().toISOString().slice(0, 10)
-  const date = new Date(text)
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10)
-  return text
-}
+const toIsoDate = toDateOnly
 
 function transactionType(input: unknown): "buy" | "sell" | "other" {
   const text = asText(input).toLowerCase()
@@ -44,8 +26,8 @@ function transactionType(input: unknown): "buy" | "sell" | "other" {
 function parseInsiders(payload: unknown[], ticker: string): FinanceInsiderData {
   const rows = payload.flatMap((item) => (item && typeof item === "object" ? [item as Record<string, unknown>] : []))
   const entries = rows.map((row) => {
-    const shares = toNumber(row.Shares ?? row.ShareCount ?? row.SharesTraded ?? row.SharesOwned)
-    const delta = toNumber(row.SharesTraded ?? row.SharesChanged ?? row.ChangeInShares ?? shares)
+    const shares = toNumber(row.Shares ?? row.ShareCount ?? row.SharesTraded ?? row.SharesOwned) ?? 0
+    const delta = toNumber(row.SharesTraded ?? row.SharesChanged ?? row.ChangeInShares ?? shares) ?? 0
     const kind = transactionType(row.TransactionType ?? row.Transaction ?? row.Type ?? row.AcquiredDisposed)
     const signedDelta = kind === "sell" ? -Math.abs(delta) : delta
     return {
@@ -119,7 +101,7 @@ export class QuiverQuantProvider implements FinanceProvider {
           {
             publisher: "Quiver Quant",
             domain: "api.quiverquant.com",
-            url: insider.source_url,
+            url: insider.sourceUrl,
           },
         ],
         data: parseInsiders(insider.rows, input.ticker),
@@ -154,12 +136,12 @@ function attribution(data: QuiverReportDataset[]): FinanceAttribution[] {
   const out: FinanceAttribution[] = []
   data.forEach((item) => {
     if (item.status !== "ok") return
-    if (seen.has(item.source_url)) return
-    seen.add(item.source_url)
+    if (seen.has(item.sourceUrl)) return
+    seen.add(item.sourceUrl)
     out.push({
       publisher: "Quiver Quant",
       domain: "api.quiverquant.com",
-      url: item.source_url,
+      url: item.sourceUrl,
     })
   })
   return out

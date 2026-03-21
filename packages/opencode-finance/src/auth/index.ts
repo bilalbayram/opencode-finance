@@ -38,7 +38,10 @@ export namespace Auth {
   export async function all(): Promise<Record<string, Info>> {
     const data = await Bun.file(filepath)
       .json()
-      .catch(() => ({} as Record<string, unknown>))
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error?.code === "ENOENT" || error?.code === "ERR_MODULE_NOT_FOUND") return {} as Record<string, unknown>
+        throw error
+      })
 
     return Object.entries(data).reduce(
       (acc, [key, value]) => {

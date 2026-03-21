@@ -18,7 +18,7 @@ export { coverage }
 function datasetLine(item: QuiverReport.QuiverReportDataset) {
     if (item.status === "ok") return `${item.label}: ok (${item.rows.length} rows)`
     if (item.status === "not_attempted_due_to_tier") {
-        return `${item.label}: not_attempted_due_to_tier (requires ${endpointMinimumPlan(item.endpoint_tier)})`
+        return `${item.label}: not_attempted_due_to_tier (requires ${endpointMinimumPlan(item.endpointTier)})`
     }
     return `${item.label}: failed (${item.error?.code ?? "NETWORK"}) ${item.error?.message ?? "request failed"}`
 }

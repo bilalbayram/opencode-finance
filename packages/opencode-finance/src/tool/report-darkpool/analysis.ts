@@ -4,9 +4,7 @@ import { endpointMinimumPlan, type QuiverTier } from "../../finance/quiver-tier"
 import * as QuiverReport from "../../finance/providers/quiver-report"
 import type { AnomalyRecord } from "../../finance/darkpool-anomaly"
 import type { HistoricalRun } from "./types"
-
-const LOGIN_HINT =
-    "curl -fsSL https://opencode.finance/install.sh | bash (recommended) or run `opencode auth login` and select `quiver-quant`"
+import { LOGIN_HINT } from "../_shared/resolve-auth"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -33,7 +31,7 @@ export async function fetchRequiredOffExchange(input: {
 
     if (dataset.status === "not_attempted_due_to_tier") {
         throw new Error(
-            `Required dataset ${dataset.label} was not attempted for ${input.ticker}; minimum plan is ${endpointMinimumPlan(dataset.endpoint_tier)}. Re-run ${LOGIN_HINT} to refresh stored plan metadata.`,
+            `Required dataset ${dataset.label} was not attempted for ${input.ticker}; minimum plan is ${endpointMinimumPlan(dataset.endpointTier)}. Re-run ${LOGIN_HINT} to refresh stored plan metadata.`,
         )
     }
 

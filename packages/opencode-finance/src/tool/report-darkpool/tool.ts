@@ -1,7 +1,7 @@
 import path from "path"
 import z from "zod"
 import { Tool } from "../tool"
-import DESCRIPTION from "./report_darkpool_anomaly.txt"
+import DESCRIPTION from "./report-darkpool-anomaly.txt"
 import { listPortfolio } from "../../finance/portfolio"
 import { normalizeTicker } from "../../finance/parser"
 import {
@@ -42,9 +42,7 @@ function defaultRoot(
 }
 
 async function resolveAuth() {
-  const auth = await resolveQuiverAuth({
-    capabilityLabel: "darkpool anomaly analysis",
-  })
+  const auth = await resolveQuiverAuth()
   return {
     key: auth.key,
     tier: auth.tier,
@@ -157,7 +155,7 @@ export const ReportDarkpoolAnomalyTool = Tool.define("report_darkpool_anomaly", 
 
           return {
             ticker: symbol,
-            source_url: dataset.source_url,
+            sourceUrl: dataset.sourceUrl,
             retrieved_at: dataset.timestamp,
             row_count: dataset.rows.length,
             analysis,
@@ -313,3 +311,8 @@ export const ReportDarkpoolAnomalyTool = Tool.define("report_darkpool_anomaly", 
     },
   }
 })
+
+export const ReportDarkpoolAnomalyInternal = {
+  defaultRoot,
+  resolveAuth,
+}

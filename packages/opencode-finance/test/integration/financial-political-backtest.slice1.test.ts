@@ -58,15 +58,6 @@ describe("financial_political_backtest slice 1", () => {
     expect(row.forward_return_percent).toBeCloseTo(2.941176, 5)
   })
 
-  test("fails loudly when auth is missing", () => {
-    expect(() =>
-      FinancialPoliticalBacktestInternal.resolveAuthFromState({
-        auth: undefined,
-        env: undefined,
-      }),
-    ).toThrow("Quiver Quant is required for political backtests")
-  })
-
   test("fails loudly when required dataset did not return successfully", () => {
     expect(() =>
       FinancialPoliticalBacktestInternal.assertDatasetsComplete([

@@ -171,7 +171,7 @@ export type FinanceDataByIntent<T extends FinanceIntent> = T extends "quote"
         ? FinanceInsiderData
         : FinanceNewsData
 
-export interface FinanceDataEnvelope<TData = unknown> extends FinanceResult<TData> {}
+export type FinanceDataEnvelope<TData = unknown> = FinanceResult<TData>
 
 export const CACHE_TTL_SECONDS = {
   quote: 300,

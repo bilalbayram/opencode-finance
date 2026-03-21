@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toDateOnly } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -17,22 +17,11 @@ const DEFAULT_TIMEOUT_MS = 12_000
 
 let tickerMapCache: Map<string, string> | undefined
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
 function normalizeForm(input: string): string {
   return input.replace(/\s+/g, "").replace(/-/g, "").toUpperCase()
 }
 
-function toIsoDate(input: unknown): string {
-  const text = asText(input).trim()
-  if (!text) return new Date().toISOString().slice(0, 10)
-  const date = new Date(text)
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10)
-  return text
-}
+const toIsoDate = toDateOnly
 
 function padCik(input: string): string {
   return input.padStart(10, "0")
@@ -175,7 +164,7 @@ export class SecEdgarProvider implements FinanceProvider {
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
     }
     const { signal, clearTimeout } = abortAfterAny(this.timeoutMs, ...(options?.signal ? [options.signal] : []))
-    try {
+    return withProviderFetch(async () => {
       const map = await this.tickerMap(signal)
       const cik = map.get(input.ticker.toUpperCase())
       if (!cik) {
@@ -200,13 +189,6 @@ export class SecEdgarProvider implements FinanceProvider {
             : parseInsiderFromFilings(payload, input.ticker, input.limit),
         errors: [],
       }
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("sec-edgar request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }

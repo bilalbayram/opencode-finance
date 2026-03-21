@@ -1,19 +1,11 @@
 import path from "path"
 import z from "zod"
 import { Tool } from "../tool"
-import DESCRIPTION from "./financial_political_backtest.txt"
-import { Auth } from "../../auth"
+import DESCRIPTION from "./financial-political-backtest.txt"
 import { normalizeTicker } from "../../finance/parser"
 import { listPortfolio } from "../../finance/portfolio"
-import {
-  endpointMinimumPlan,
-  quiverPlanLabel,
-  resolveQuiverTierFromAuth,
-  tierAllows,
-  type QuiverTier,
-} from "../../finance/quiver-tier"
 import * as QuiverReport from "../../finance/providers/quiver-report"
-import { projectRoot, resolveQuiverAuth, writeToolArtifacts } from "../_shared"
+import { projectRoot, resolveQuiverAuth, writeToolArtifacts, LOGIN_HINT } from "../_shared"
 import {
   EventStudyError,
   computeEventWindowReturns,
@@ -31,9 +23,6 @@ import { toReport, toDashboard } from "./render"
 import { parseChartBars, fetchYahooDailyBars, fetchSector } from "./market-data"
 import { selectBenchmarksByTicker, computePortfolioBenchmarkRelativeRows } from "./benchmark"
 import { buildRunComparison } from "./comparison"
-
-const LOGIN_HINT =
-  "curl -fsSL https://opencode.finance/install.sh | bash (recommended) or run `opencode auth login` and select `quiver-quant`"
 
 const DEFAULT_WINDOWS = [5]
 const DEFAULT_ALIGNMENT: NonTradingAlignment = "next_session"
@@ -81,38 +70,6 @@ function addDays(input: Date, days: number) {
   const value = new Date(input)
   value.setUTCDate(value.getUTCDate() + days)
   return value
-}
-
-function resolveAuthFromState(input: {
-  auth: Awaited<ReturnType<typeof Auth.get>>
-  env: string | undefined
-}) {
-  const auth = input.auth
-  if (!auth || auth.type !== "api") {
-    if (input.env) {
-      throw new Error(`Quiver plan metadata is missing. Run \`${LOGIN_HINT}\` to store key + plan.`)
-    }
-    throw new Error(`Quiver Quant is required for political backtests. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const key = input.env ?? auth.key
-  if (!key?.trim()) {
-    throw new Error(`Quiver Quant API key is missing. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const tier = resolveQuiverTierFromAuth(auth)
-  if (!tierAllows("tier_1", tier.tier)) {
-    throw new Error(
-      `Quiver plan ${quiverPlanLabel(tier.tier)} does not include government-trading datasets required by this backtest. Upgrade to ${endpointMinimumPlan("tier_1")} and rerun \`${LOGIN_HINT}\`.`,
-    )
-  }
-
-  return {
-    key,
-    tier: tier.tier,
-    inferred: tier.inferred,
-    warning: tier.warning,
-  }
 }
 
 async function resolveAuth() {
@@ -283,7 +240,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         await Promise.all(
           tickers.map(async (ticker) => {
             const sector = await fetchSector({
-              ticker,
+              symbol: ticker,
               signal: ctx.abort,
             })
             return [ticker, sector] as const
@@ -417,7 +374,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
             datasets: item.datasets.map((dataset) => ({
               id: dataset.id,
               label: dataset.label,
-              source_url: dataset.source_url,
+              sourceUrl: dataset.sourceUrl,
               rows: dataset.rows.length,
               status: dataset.status,
             })),
@@ -528,7 +485,6 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
 })
 
 export const FinancialPoliticalBacktestInternal = {
-  resolveAuthFromState,
   assertDatasetsComplete,
   portfolioTickersFromHoldings,
   defaultOutputRoot,

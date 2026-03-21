@@ -44,7 +44,7 @@ export async function resolveProviderApiKey(
   return resolveKeyFromState(state, options)
 }
 
-export async function readQuiverCredential() {
+export function readQuiverCredential() {
   return readProviderCredential("quiver-quant")
 }
 

@@ -1,7 +1,8 @@
 import { resolveAnchors } from "./anchor"
 import { aggregateByWindow } from "./aggregate"
 import { selectBenchmarks } from "./benchmark"
-import { EventStudyError } from "./error"
+import { EventStudyError } from "./errors"
+import { toUpperSymbol } from "./symbol"
 import { createCloseMap, normalizeWindowList } from "./forward-returns"
 import { alignToNextSession, createTradingCalendar, getSessionByOffset } from "./trading-calendar"
 import type {
@@ -27,7 +28,7 @@ function round(input: number, digits = 6) {
 }
 
 function normalizeSymbol(value: string) {
-  const symbol = value.trim().toUpperCase()
+  const symbol = toUpperSymbol(value)
   if (!symbol) throw new EventStudyError("Price history symbol cannot be empty.", "INVALID_PRICE_SERIES")
   return symbol
 }

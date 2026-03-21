@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto"
 import { InvalidDateError, InvalidQuiverRowError, MissingRequiredFieldError } from "./errors"
+import { toUpperSymbol, isValidSymbol } from "./symbol"
 import type { IsoDate, NormalizedPoliticalEvent, PoliticalTransactionType, QuiverPoliticalRowInput } from "./types"
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const SYMBOL_RE = /^[A-Z][A-Z0-9.]{0,9}$/
 const EXPLICIT_TIMEZONE_RE = /(z|[+\-]\d{2}:?\d{2}|(?:\s|t)(utc|gmt))$/i
 const ISO_LOCAL_DATETIME_RE = /^\d{4}-\d{2}-\d{2}t/i
 
@@ -66,7 +66,7 @@ function normalizeStableValue(input: unknown): unknown {
   if (typeof input === "object") {
     const row = input as Record<string, unknown>
     const out: Record<string, unknown> = {}
-    for (const key of Object.keys(row).sort()) {
+    for (const key of Object.keys(row).sort((a, b) => a.localeCompare(b))) {
       out[normalizeFieldKey(key)] = normalizeStableValue(row[key])
     }
     return out
@@ -101,9 +101,9 @@ function pickField(row: Record<string, unknown>, candidates: readonly string[]):
 }
 
 function normalizeSymbol(value: string, details: Record<string, unknown>) {
-  const symbol = value.trim().toUpperCase()
+  const symbol = toUpperSymbol(value)
   if (!symbol) throw new MissingRequiredFieldError("symbol", details)
-  if (!SYMBOL_RE.test(symbol)) {
+  if (!isValidSymbol(symbol)) {
     throw new InvalidQuiverRowError(`Invalid symbol: ${symbol}`, details)
   }
   return symbol

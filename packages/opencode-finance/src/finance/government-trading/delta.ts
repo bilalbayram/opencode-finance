@@ -20,7 +20,7 @@ function changedMaterialFields(
   previous: GovernmentTradingNormalizedEvent,
   current: GovernmentTradingNormalizedEvent,
 ): string[] {
-  const allKeys = [...new Set([...Object.keys(previous.materialFields), ...Object.keys(current.materialFields)])].sort()
+  const allKeys = [...new Set([...Object.keys(previous.materialFields), ...Object.keys(current.materialFields)])].sort((a, b) => a.localeCompare(b))
   return allKeys.filter((key) => (previous.materialFields[key] ?? "") !== (current.materialFields[key] ?? ""))
 }
 

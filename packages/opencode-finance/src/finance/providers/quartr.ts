@@ -1,6 +1,6 @@
 import { abortAfterAny } from "../../util/abort"
-import { normalizeErrorText } from "../parser"
-import { ProviderError } from "../provider"
+import { asText, toDateOnly } from "../parse-helpers"
+import { ProviderError, withProviderFetch } from "../provider"
 import type { FinanceProvider } from "../provider"
 import type {
   FinanceDataEnvelope,
@@ -14,18 +14,7 @@ import type {
 const QUARTR_BASE = "https://api.quartr.com/public/v3"
 const DEFAULT_TIMEOUT_MS = 12_000
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
-function toIsoDate(input: unknown): string {
-  const text = asText(input).trim()
-  if (!text) return new Date().toISOString().slice(0, 10)
-  const date = new Date(text)
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10)
-  return text
-}
+const toIsoDate = toDateOnly
 
 function inferForm(row: Record<string, unknown>): string {
   const title = asText((row.event as Record<string, unknown> | undefined)?.title || row.title).toLowerCase()
@@ -114,7 +103,7 @@ export class QuartrProvider implements FinanceProvider {
     }
     const timestamp = new Date().toISOString()
 
-    try {
+    return withProviderFetch(async () => {
       if (input.intent === "filings") {
         const params = new URLSearchParams({
           tickers: input.ticker,
@@ -188,13 +177,6 @@ export class QuartrProvider implements FinanceProvider {
       }
 
       throw new ProviderError(`Unsupported intent for ${this.id}: ${input.intent}`, this.id, "UNSUPPORTED")
-    } catch (error) {
-      clearTimeout()
-      if (error instanceof ProviderError) throw error
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new ProviderError("quartr request timed out", this.id, "TIMEOUT", this.timeoutMs)
-      }
-      throw new ProviderError(normalizeErrorText(error), this.id, "NETWORK")
-    }
+    }, { providerId: this.id, displayName: this.displayName, timeoutMs: this.timeoutMs, clearTimeout })
   }
 }
