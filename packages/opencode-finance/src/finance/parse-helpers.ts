@@ -18,7 +18,9 @@ export function asText(input: unknown): string {
 export function toNumber(input: unknown): number | null {
   const text = asText(input).replace(/,/g, "").trim()
   if (!text) return null
-  const value = Number(text.replace(/[^0-9.-]/g, ""))
+  const normalized = text.replace(/[^0-9.-]/g, "")
+  if (!/[0-9]/.test(normalized)) return null
+  const value = Number(normalized)
   if (!Number.isFinite(value)) return null
   return value
 }

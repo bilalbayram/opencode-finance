@@ -8,6 +8,27 @@ import { LOGIN_HINT } from "../_shared/resolve-auth"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+type HistoricalEvidence = {
+    generated_at?: string
+    anomalies?: AnomalyRecord[]
+}
+
+function parseHistoricalEvidence(text: string): HistoricalEvidence | undefined {
+    try {
+        return JSON.parse(text) as HistoricalEvidence
+    } catch {
+        return undefined
+    }
+}
+
+async function isDirectory(pathname: string) {
+    try {
+        return (await fs.stat(pathname)).isDirectory()
+    } catch {
+        return false
+    }
+}
+
 export async function fetchRequiredOffExchange(input: {
     ticker: string
     apiKey: string
@@ -66,8 +87,7 @@ export async function readHistoricalRuns(input: { scopeRoots: string[]; outputRo
     const current = path.resolve(input.outputRoot)
 
     for (const scopeRoot of input.scopeRoots) {
-        const exists = await Bun.file(scopeRoot).exists()
-        if (!exists) continue
+        if (!(await isDirectory(scopeRoot))) continue
 
         const dates = await fs.readdir(scopeRoot, { withFileTypes: true })
         for (const entry of dates) {
@@ -81,10 +101,7 @@ export async function readHistoricalRuns(input: { scopeRoots: string[]; outputRo
             const file = Bun.file(evidencePath)
             if (!(await file.exists())) continue
 
-            const json = await file
-                .text()
-                .then((text) => JSON.parse(text) as { generated_at?: string; anomalies?: AnomalyRecord[] })
-                .catch(() => undefined)
+            const json = parseHistoricalEvidence(await file.text())
 
             if (!json?.generated_at || !Array.isArray(json.anomalies)) continue
 
