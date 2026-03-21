@@ -1,6 +1,7 @@
 import path from "path"
 import z from "zod"
 import { Global } from "../global"
+import { readJsonIfExists, writeText } from "../runtime/fs"
 
 export namespace Auth {
   export const Oauth = z.object({
@@ -36,14 +37,12 @@ export namespace Auth {
   }
 
   export async function all(): Promise<Record<string, Info>> {
-    const data = await Bun.file(filepath)
-      .json()
-      .catch((error: NodeJS.ErrnoException) => {
-        if (error?.code === "ENOENT" || error?.code === "ERR_MODULE_NOT_FOUND") return {} as Record<string, unknown>
-        throw error
-      })
+    const data = await readJsonIfExists<Record<string, unknown>>(filepath).catch((error: NodeJS.ErrnoException) => {
+      if (error?.code === "ENOENT" || error?.code === "ERR_MODULE_NOT_FOUND") return {} as Record<string, unknown>
+      throw error
+    })
 
-    return Object.entries(data).reduce(
+    return Object.entries(data ?? {}).reduce(
       (acc, [key, value]) => {
         const parsed = Info.safeParse(value)
         if (!parsed.success) return acc
@@ -56,12 +55,12 @@ export namespace Auth {
 
   export async function set(providerID: string, info: Info) {
     const data = await all()
-    await Bun.write(filepath, JSON.stringify({ ...data, [providerID]: info }, null, 2), { mode: 0o600 })
+    await writeText(filepath, JSON.stringify({ ...data, [providerID]: info }, null, 2), { mode: 0o600 })
   }
 
   export async function remove(providerID: string) {
     const data = await all()
     delete data[providerID]
-    await Bun.write(filepath, JSON.stringify(data, null, 2), { mode: 0o600 })
+    await writeText(filepath, JSON.stringify(data, null, 2), { mode: 0o600 })
   }
 }

@@ -22,6 +22,44 @@ It will:
 
 When `enabled_providers` is set in OpenCode config, `opencode-finance` auto-includes its finance auth provider IDs at runtime so they appear in `opencode auth login`. Explicit `disabled_providers` entries still hide them.
 
+## OpenClaw Setup
+
+OpenClaw support is v1 for `/report` only.
+
+Install the same npm package directly into OpenClaw:
+
+```bash
+openclaw plugins install opencode-finance
+openclaw plugins enable opencode-finance
+openclaw gateway restart
+```
+
+Add report credentials in `~/.openclaw/openclaw.json` under the OpenClaw skill key:
+
+```json
+{
+  "skills": {
+    "entries": {
+      "opencode-finance-report": {
+        "env": {
+          "ALPHAVANTAGE_API_KEY": "your-alpha-vantage-key",
+          "SEC_EDGAR_IDENTITY": "Your Name your@email.com",
+          "FINNHUB_API_KEY": "optional-better-coverage"
+        }
+      }
+    }
+  }
+}
+```
+
+Start a new session after updating config, then run:
+
+```text
+/report AAPL
+```
+
+The OpenClaw `/report` skill writes markdown artifacts under `reports/<TICKER>/<YYYY-MM-DD>/` and always generates the matching PDF in the same directory.
+
 ## Manual plugin enable (advanced)
 
 If you need manual setup, add the plugin package in your OpenCode config:

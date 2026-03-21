@@ -3,6 +3,7 @@ import path from "path"
 import type { Tool } from "../tool"
 import { assertExternalDirectory } from "../external-directory"
 import { projectRoot } from "./project-root"
+import { exists, writeText } from "../../runtime/fs"
 
 type WriteToolArtifactsInput = {
   ctx: Tool.Context
@@ -20,7 +21,7 @@ async function archiveExistingArtifacts(outputRoot: string, paths: string[]) {
 
   const existing: string[] = []
   for (const filepath of paths) {
-    if (await Bun.file(filepath).exists()) {
+    if (await exists(filepath)) {
       existing.push(filepath)
     }
   }
@@ -66,7 +67,7 @@ export async function writeToolArtifacts(input: WriteToolArtifactsInput): Promis
   await archiveExistingArtifacts(input.outputRoot, input.archivePaths ?? [])
 
   try {
-    await Promise.all(Object.values(filePaths).map((entry) => Bun.write(entry.path, entry.content)))
+    await Promise.all(Object.values(filePaths).map((entry) => writeText(entry.path, entry.content)))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed writing artifacts to ${input.outputRoot}: ${message}`, { cause: error })

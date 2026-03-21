@@ -5,6 +5,7 @@ import * as QuiverReport from "../../finance/providers/quiver-report"
 import type { AnomalyRecord } from "../../finance/darkpool-anomaly"
 import type { HistoricalRun } from "./types"
 import { LOGIN_HINT } from "../_shared/resolve-auth"
+import { exists, readText } from "../../runtime/fs"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -98,10 +99,9 @@ export async function readHistoricalRuns(input: { scopeRoots: string[]; outputRo
             if (path.resolve(root) === current) continue
 
             const evidencePath = path.join(root, "evidence.json")
-            const file = Bun.file(evidencePath)
-            if (!(await file.exists())) continue
+            if (!(await exists(evidencePath))) continue
 
-            const json = parseHistoricalEvidence(await file.text())
+            const json = parseHistoricalEvidence(await readText(evidencePath))
 
             if (!json?.generated_at || !Array.isArray(json.anomalies)) continue
 

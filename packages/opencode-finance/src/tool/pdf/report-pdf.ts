@@ -6,6 +6,7 @@ import DESCRIPTION from "../report-pdf.txt"
 import { assertExternalDirectory } from "../external-directory"
 import { projectRoot } from "../_shared"
 import { financialSearch } from "../../finance/orchestrator"
+import { readTextIfExists, writeBytes } from "../../runtime/fs"
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -289,7 +290,7 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     })
 
     const bytes = await pdf.save()
-    await Bun.write(output, bytes)
+    await writeBytes(output, bytes)
 
     return {
       title: path.relative(worktree, output),
@@ -305,10 +306,7 @@ export const ReportPdfTool = Tool.define("report_pdf", {
 })
 
 async function readOptional(filepath: string) {
-  const file = Bun.file(filepath)
-  const exists = await file.exists()
-  if (!exists) return
-  return file.text()
+  return readTextIfExists(filepath)
 }
 
 async function readRequired(filepath: string) {

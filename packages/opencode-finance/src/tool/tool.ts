@@ -1,12 +1,22 @@
 import z from "zod"
-import type { ToolContext } from "@opencode-ai/plugin/tool"
 
 export namespace Tool {
   interface Metadata {
     [key: string]: any
   }
 
-  export type Context<M extends Metadata = Metadata> = ToolContext & {
+  export type PermissionRequest = {
+    permission: string
+    patterns: string[]
+    always: string[]
+    metadata?: Record<string, unknown>
+  }
+
+  export type Context<M extends Metadata = Metadata> = {
+    directory: string
+    worktree: string
+    abort: AbortSignal
+    ask(input: PermissionRequest): Promise<void>
     metadata(input: { title?: string; metadata?: M }): void
   }
 

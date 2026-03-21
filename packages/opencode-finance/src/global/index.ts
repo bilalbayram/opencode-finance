@@ -1,4 +1,4 @@
-import fs from "fs/promises"
+import fs from "fs"
 import path from "path"
 import os from "os"
 import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
@@ -37,11 +37,13 @@ export namespace Global {
   }
 }
 
-await Promise.all([
-  fs.mkdir(Global.Path.data, { recursive: true }),
-  fs.mkdir(Global.Path.cache, { recursive: true }),
-  fs.mkdir(Global.Path.config, { recursive: true }),
-  fs.mkdir(Global.Path.state, { recursive: true }),
-  fs.mkdir(Global.Path.log, { recursive: true }),
-  fs.mkdir(Global.Path.bin, { recursive: true }),
-])
+for (const directory of [
+  Global.Path.data,
+  Global.Path.cache,
+  Global.Path.config,
+  Global.Path.state,
+  Global.Path.log,
+  Global.Path.bin,
+]) {
+  fs.mkdirSync(directory, { recursive: true })
+}

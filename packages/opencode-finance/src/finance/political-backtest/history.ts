@@ -2,6 +2,7 @@ import fs from "fs/promises"
 import path from "path"
 import { EventStudyError } from "./errors"
 import type { AggregateWindow } from "./types"
+import { exists, readJson, stat } from "../../runtime/fs"
 
 export type BacktestRunSnapshot = {
   workflow: "financial_political_backtest"
@@ -141,7 +142,7 @@ export async function discoverHistoricalRuns(input: {
     const outputRoot = path.dirname(assumptionsPath)
     if (input.exclude_output_root && path.resolve(input.exclude_output_root) === path.resolve(outputRoot)) continue
 
-    const assumptionsRaw = await Bun.file(assumptionsPath).json().catch(() => {
+    const assumptionsRaw = await readJson<Record<string, unknown>>(assumptionsPath).catch(() => {
       throw new EventStudyError(`Failed to parse assumptions.json in ${outputRoot}`, "INVALID_PRICE_SERIES")
     })
 
@@ -151,20 +152,20 @@ export async function discoverHistoricalRuns(input: {
     const aggregatePath = path.join(outputRoot, "aggregate-results.json")
     const eventsPath = path.join(outputRoot, "events.json")
 
-    if (!(await Bun.file(aggregatePath).exists()) || !(await Bun.file(eventsPath).exists())) {
+    if (!(await exists(aggregatePath)) || !(await exists(eventsPath))) {
       throw new EventStudyError(`Historical run at ${outputRoot} is missing required raw artifacts.`, "INVALID_PRICE_SERIES", {
         output_root: outputRoot,
       })
     }
 
-    const aggregateRaw = await Bun.file(aggregatePath).json().catch(() => {
+    const aggregateRaw = await readJson(aggregatePath).catch(() => {
       throw new EventStudyError(`Failed to parse aggregate-results.json in ${outputRoot}`, "INVALID_PRICE_SERIES")
     })
-    const eventsRaw = await Bun.file(eventsPath).json().catch(() => {
+    const eventsRaw = await readJson(eventsPath).catch(() => {
       throw new EventStudyError(`Failed to parse events.json in ${outputRoot}`, "INVALID_PRICE_SERIES")
     })
 
-    const generated = asDate(assumptions.generated_at) ?? new Date((await Bun.file(assumptionsPath).stat()).mtime).toISOString()
+    const generated = asDate(assumptions.generated_at) ?? new Date((await stat(assumptionsPath)).mtime).toISOString()
 
     snapshots.push({
       workflow: "financial_political_backtest",

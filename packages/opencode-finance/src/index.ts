@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { fileURLToPath } from "url"
 import z from "zod"
 import { type Plugin, tool as pluginTool, type Hooks } from "@opencode-ai/plugin"
 import { FINANCE_AUTH_PROVIDER, type FinanceAuthProviderID } from "./finance/auth-provider"
@@ -16,6 +17,7 @@ import { ReportPdfTool } from "./tool/pdf"
 import { Env } from "./env"
 import { reportExecutionConstraintLines } from "./internal/report-execution-constraints"
 import PROMPT_FINANCE from "./prompt/finance.txt"
+import { exists, readText, writeText } from "./runtime/fs"
 
 const REQUIRED_PROVIDER = ["alphavantage", "sec-edgar"] as const
 const RECOMMENDED_PROVIDER = ["finnhub", "financial-modeling-prep", "polygon", "quartr", "quiver-quant"] as const
@@ -30,7 +32,8 @@ const AUTH_LOGIN_PROVIDER = [
 ] as const satisfies readonly FinanceAuthProviderID[]
 const REPORT_SKILL = "finance-comprehensive-report"
 const REPORT_SKILL_GIST_ENV = "FINANCE_REPORT_SKILL_GIST_URL"
-const BUNDLED_SKILL = path.resolve(import.meta.dir, "./skill/finance-comprehensive-report.SKILL.md")
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
+const BUNDLED_SKILL = path.resolve(MODULE_DIR, "./skill/finance-comprehensive-report.SKILL.md")
 const login = (id: string) =>
   `\`curl -fsSL https://opencode.finance/install.sh | bash\` (recommended) or run \`opencode auth login\` and select \`${id}\``
 
@@ -85,7 +88,7 @@ async function missingRecommended() {
 
 async function ensureSkill(context: { directory: string; worktree: string }) {
   const target = path.join(root(context), ".opencode", "skills", REPORT_SKILL, "SKILL.md")
-  if (await Bun.file(target).exists()) return target
+  if (await exists(target)) return target
 
   const gist = (Env.get(REPORT_SKILL_GIST_ENV) ?? "").trim()
   const content = gist
@@ -93,15 +96,14 @@ async function ensureSkill(context: { directory: string; worktree: string }) {
       if (!response.ok) throw new Error(`failed to fetch ${REPORT_SKILL_GIST_ENV} (${response.status})`)
       return response.text()
     })
-    : await Bun.file(BUNDLED_SKILL)
-      .text()
+    : await readText(BUNDLED_SKILL)
       .catch(() => {
         throw new Error(`missing bundled skill: ${BUNDLED_SKILL}`)
       })
 
   if (!content.trim()) throw new Error(`empty skill content for ${REPORT_SKILL}`)
   await fs.mkdir(path.dirname(target), { recursive: true })
-  await Bun.write(target, content)
+  await writeText(target, content)
   return target
 }
 

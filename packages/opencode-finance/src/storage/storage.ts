@@ -1,6 +1,7 @@
 import path from "path"
 import fs from "fs/promises"
 import { Global } from "../global"
+import { readJson, writeText } from "../runtime/fs"
 
 export namespace Storage {
   export class NotFoundError extends Error {
@@ -22,8 +23,7 @@ export namespace Storage {
 
   export async function read<T>(key: string[]) {
     const filepath = target(key)
-    return Bun.file(filepath)
-      .json()
+    return readJson<T>(filepath)
       .then((value) => value as T)
       .catch((error) => {
         if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -36,7 +36,7 @@ export namespace Storage {
   export async function write<T>(key: string[], value: T) {
     const filepath = target(key)
     await ensure(filepath)
-    await Bun.write(filepath, JSON.stringify(value, null, 2))
+    await writeText(filepath, JSON.stringify(value, null, 2))
   }
 
   export async function remove(key: string[]) {

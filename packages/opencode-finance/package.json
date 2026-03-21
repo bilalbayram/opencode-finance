@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-finance",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,7 +10,10 @@
     "type": "git",
     "url": "https://github.com/bilalbayram/opencode.finance"
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "openclaw.plugin.json", "skills"],
+  "openclaw": {
+    "extensions": ["./dist/openclaw/index.cjs"]
+  },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "node ./scripts/build.mjs",
@@ -27,6 +30,8 @@
   "dependencies": {
     "@opencode-ai/plugin": "1.2.27",
     "@opencode-ai/sdk": "1.2.27",
+    "@sinclair/typebox": "0.34.48",
+    "openclaw": "2026.3.13",
     "pdf-lib": "1.17.1",
     "xdg-basedir": "5.1.0",
     "zod": "4.1.8"

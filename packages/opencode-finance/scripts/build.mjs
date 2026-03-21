@@ -19,6 +19,19 @@ if (tsc.status !== 0) {
   process.exit(tsc.status ?? 1)
 }
 
+const openClawBundle = spawnSync(
+  "bun",
+  ["build", "./src/openclaw/index.ts", "--outfile", "./dist/openclaw/index.cjs", "--target", "node", "--format", "cjs", "--packages", "external"],
+  {
+    cwd: packageDir,
+    stdio: "inherit",
+  },
+)
+
+if (openClawBundle.status !== 0) {
+  process.exit(openClawBundle.status ?? 1)
+}
+
 copyRuntimeAssets(srcDir)
 
 function copyRuntimeAssets(directory) {
@@ -40,5 +53,5 @@ function copyRuntimeAssets(directory) {
 }
 
 function shouldCopyAsset(filename) {
-  return filename.endsWith(".txt") || filename.endsWith(".SKILL.md")
+  return filename.endsWith(".txt") || filename.endsWith(".SKILL.md") || filename === "SKILL.md"
 }
