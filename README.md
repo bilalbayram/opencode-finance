@@ -60,6 +60,20 @@ Start a new session after updating config, then run:
 
 The OpenClaw `/report` skill writes markdown artifacts under `reports/<TICKER>/<YYYY-MM-DD>/` and always generates the matching PDF in the same directory.
 
+## Example Report Output
+
+Example run:
+
+```text
+/report AAPL
+```
+
+The screenshots below were captured with Playwright from `/Users/Bayram/Developer/opencode.finance/reports/AAPL/2026-03-23/AAPL-2026-03-23.pdf` and reflect the actual exported PDF pages.
+
+![AAPL report PDF cover](output/playwright/aapl-report-pdf-page-01-playwright.png)
+
+![AAPL report PDF page 2](output/playwright/aapl-report-pdf-page-02-playwright.png)
+
 ## Manual plugin enable (advanced)
 
 If you need manual setup, add the plugin package in your OpenCode config:
