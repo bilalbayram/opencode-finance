@@ -68,7 +68,7 @@ Example run:
 /report AAPL
 ```
 
-The screenshots below were captured with Playwright from `/Users/Bayram/Developer/opencode.finance/reports/AAPL/2026-03-23/AAPL-2026-03-23.pdf` and reflect the actual exported PDF pages.
+The screenshots below were captured with Playwright from `/Users/Bayram/Developer/opencode.finance/reports/AAPL/2026-03-24/AAPL-2026-03-24.pdf` and reflect the actual exported PDF pages.
 
 ![AAPL report PDF cover](output/playwright/aapl-report-pdf-page-01-playwright.png)
 
