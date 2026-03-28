@@ -13,6 +13,7 @@ import { ReportInsidersTool } from "./tool/report-insiders"
 import { ReportGovernmentTradingTool } from "./tool/report-government-trading"
 import { ReportDarkpoolAnomalyTool } from "./tool/report-darkpool"
 import { FinancialPoliticalBacktestTool } from "./tool/financial-political-backtest"
+import { ReportEvaluationTool } from "./tool/report_evaluation"
 import { ReportPdfTool } from "./tool/pdf"
 import { Env } from "./env"
 import { reportExecutionConstraintLines } from "./internal/report-execution-constraints"
@@ -116,6 +117,7 @@ async function buildTools() {
     ReportGovernmentTradingTool,
     ReportDarkpoolAnomalyTool,
     FinancialPoliticalBacktestTool,
+    ReportEvaluationTool,
     ReportPdfTool,
   ]
   const out: Hooks["tool"] = {}

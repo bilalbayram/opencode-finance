@@ -88,6 +88,99 @@ const DARKPOOL_ARTIFACTS = {
   ),
 }
 
+const REPORT_EVALUATION_SNAPSHOT = {
+  ticker: "AAPL",
+  generated_at: "2026-02-26T00:00:00.000Z",
+  current_price: 210.1,
+  fairness: [
+    {
+      key: "dcf",
+      label: "DCF",
+      category: "fairness",
+      value: 225.4,
+      formatted: "$225.40",
+      basis: "modeled",
+      source: "Yahoo Finance",
+      source_url: "https://finance.yahoo.com/quote/AAPL",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+  ],
+  quality: [
+    {
+      key: "roe",
+      label: "Return on Equity",
+      category: "quality",
+      value: 32.4,
+      formatted: "32.4%",
+      basis: "reported",
+      source: "Finnhub",
+      source_url: "https://finnhub.io/api/v1/stock/metric?symbol=AAPL&metric=all",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+  ],
+  dividend: [
+    {
+      key: "dividend_yield",
+      label: "Dividend Yield",
+      category: "dividend",
+      value: 0.55,
+      formatted: "0.55%",
+      basis: "reported",
+      source: "Yahoo Finance",
+      source_url: "https://finance.yahoo.com/quote/AAPL",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+  ],
+  stability: [
+    {
+      key: "beta",
+      label: "Beta",
+      category: "stability",
+      value: 1.08,
+      formatted: "1.08",
+      basis: "reported",
+      source: "Yahoo Finance",
+      source_url: "https://finance.yahoo.com/quote/AAPL",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+  ],
+  last_four_quarters: [
+    {
+      quarter: "Q1 2025",
+      revenue: 120000000000,
+      netIncome: 34000000000,
+      source: "Polygon",
+      source_url: "https://api.polygon.io/vX/reference/financials?ticker=AAPL&timeframe=quarterly",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+    {
+      quarter: "Q2 2025",
+      revenue: 118000000000,
+      netIncome: 31000000000,
+      source: "Polygon",
+      source_url: "https://api.polygon.io/vX/reference/financials?ticker=AAPL&timeframe=quarterly",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+    {
+      quarter: "Q3 2025",
+      revenue: 124000000000,
+      netIncome: 36000000000,
+      source: "Polygon",
+      source_url: "https://api.polygon.io/vX/reference/financials?ticker=AAPL&timeframe=quarterly",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+    {
+      quarter: "Q4 2025",
+      revenue: 130000000000,
+      netIncome: 39000000000,
+      source: "Polygon",
+      source_url: "https://api.polygon.io/vX/reference/financials?ticker=AAPL&timeframe=quarterly",
+      retrieved_at: "2026-02-26T00:00:00.000Z",
+    },
+  ],
+  unknowns: [],
+} as const
+
 function toolContext(worktree: string) {
   return {
     directory: worktree,
@@ -187,10 +280,25 @@ describe("report_pdf report profile", () => {
       report: "# Report\n",
       dashboard: undefined,
       assumptions: undefined,
+      evaluationMarkdown: "# Deterministic Evaluation Snapshot\n",
+      evaluationSnapshotJson: JSON.stringify(REPORT_EVALUATION_SNAPSHOT),
     })
 
     expect(issues.some((item) => item.includes("Directional conviction score"))).toBeTrue()
     expect(issues.some((item) => item.includes("Stock Price"))).toBeTrue()
+  })
+
+  test("requires deterministic evaluation artifacts", () => {
+    const issues = ReportPdfInternal.qualityIssuesBySubcommand({
+      subcommand: "report",
+      info: COVER,
+      report: "# Report\n",
+      dashboard: "# Dashboard\n",
+      assumptions: "{}",
+    })
+
+    expect(issues).toContain("Missing required report artifact `evaluation.md`.")
+    expect(issues).toContain("Missing required report artifact `evaluation-snapshot.json`.")
   })
 })
 

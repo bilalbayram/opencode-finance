@@ -406,19 +406,14 @@ workflow_version: 5
 13. Build scenario valuation, directional conviction output, and a red-team section that attacks the thesis.
 14. Finish with a monitoring dashboard that can be reused next quarter.
 15. Produce deliverables and reproducibility metadata.
-16. After writing all report artifacts, ask whether to generate a PDF:
-   - use `question` with:
-     - header: `PDF Export`
-     - question: `Generate a polished PDF report now?`
-     - options:
-       - `Yes (Recommended)` - generate PDF
-       - `No` - skip PDF generation
-     - `custom: false`
-   - if user picks `Yes (Recommended)`, call `report_pdf` with:
-     - `subcommand`: `report`
-     - `outputRoot`: `reports/<ticker>/<report_date>/`
-     - `filename`: `<ticker>-<report_date>.pdf`
-   - if `question` is unavailable in this client context, skip PDF export and complete the report.
+16. After writing `report.md`, `dashboard.md`, `assumptions.json`, and `adjustment-log.md`, call `report_evaluation`:
+   - `ticker`: `<ticker>`
+   - `outputRoot`: `reports/<ticker>/<report_date>/`
+17. After `report_evaluation` writes `evaluation.md` and `evaluation-snapshot.json`, call `report_pdf`:
+   - `subcommand`: `report`
+   - `outputRoot`: `reports/<ticker>/<report_date>/`
+   - `filename`: `<ticker>-<report_date>.pdf`
+   - do not ask a PDF question and do not skip PDF generation.
 
 ## Output Requirements
 - Return a concise in-chat executive summary with:
@@ -435,9 +430,13 @@ workflow_version: 5
   - `dashboard.md`: one-page KPI, thesis-monitoring, and catalyst dashboard
   - `assumptions.json`: scenario assumptions, score inputs, monitoring triggers, and machine-readable evidence metadata
   - `adjustment-log.md`: normalization entries, recurring vs non-recurring classification, source conflicts, and rationale
-- Optionally write PDF artifact when user opts in via `question`:
+- Write deterministic evaluation artifacts to `reports/<ticker>/<report_date>/`:
+  - `evaluation.md`: deterministic evaluation summary table
+  - `evaluation-snapshot.json`: machine-readable evaluation data for PDF rendering
+- Always write PDF artifact via `report_pdf`:
   - `<ticker>-<report_date>.pdf`
   - first page: ticker summary
+  - second page: deterministic evaluation snapshot from `evaluation-snapshot.json`
   - remaining pages: report information from `report.md`, `dashboard.md`, and `assumptions.json` (exclude `adjustment-log.md`)
   - footer on every page: display `opencode.finance`, linked to `https://opencode.finance`
 

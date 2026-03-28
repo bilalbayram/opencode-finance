@@ -2,7 +2,7 @@
   "id": "opencode-finance",
   "name": "OpenCode Finance",
   "description": "Comprehensive public-company report workflows for OpenClaw.",
-  "version": "1.2.8",
+  "version": "1.2.9-beta.0",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

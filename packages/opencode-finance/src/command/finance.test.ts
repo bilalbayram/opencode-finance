@@ -52,8 +52,12 @@ describe("FINANCE_SLASH_COMMANDS", () => {
     const command = getCommand("report")
     const template = command.template
 
-    expect(template).toContain("If user selects `Yes (Recommended)`, call `report_pdf` with:")
+    expect(template).toContain("call `report_evaluation` with:")
+    expect(template).toContain("`ticker`: `$1`")
+    expect(template).toContain("`outputRoot`: `reports/$1/<YYYY-MM-DD>/`")
+    expect(template).toContain("After `report_evaluation` writes `evaluation.md` and `evaluation-snapshot.json`, call `report_pdf` with:")
     expect(template).toContain("`subcommand`: `report`")
     expect(template).toContain("`outputRoot`: `reports/$1/<YYYY-MM-DD>/`")
+    expect(template).toContain("Do not ask a PDF question and do not skip PDF generation.")
   })
 })

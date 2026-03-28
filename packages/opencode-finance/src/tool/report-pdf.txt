@@ -7,9 +7,9 @@ Inputs:
 
 Behavior:
 - `report` profile:
-  - expects `/report` artifacts (`report.md`, `dashboard.md`, `assumptions.json`)
+  - expects `/report` artifacts (`report.md`, `dashboard.md`, `assumptions.json`, `evaluation.md`, `evaluation-snapshot.json`)
   - enforces comprehensive-report quality gates
-  - uses the existing research-brief first page and section flow (Full Report -> Dashboard -> Assumptions)
+  - uses the existing research-brief first page, a deterministic evaluation page 2, and section flow (Full Report -> Dashboard -> Assumptions)
 - `government-trading` profile:
   - expects government-trading artifacts (`report.md`, `dashboard.md`, `assumptions.json`, `normalized-events.json`, `delta-events.json`, `data.json`)
   - enforces government-trading-specific quality gates

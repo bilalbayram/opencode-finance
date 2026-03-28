@@ -88,6 +88,109 @@ function reportArtifacts() {
       null,
       2,
     ),
+    evaluation: [
+      "# Deterministic Evaluation Snapshot",
+      "",
+      "Ticker: AAPL",
+      "Generated At: 2026-02-14T12:00:00.000Z",
+      "Current Price: $210.10",
+    ].join("\n"),
+    evaluationSnapshot: JSON.stringify(
+      {
+        ticker: "AAPL",
+        generated_at: "2026-02-14T12:00:00.000Z",
+        current_price: 210.1,
+        fairness: [
+          {
+            key: "dcf",
+            label: "DCF",
+            category: "fairness",
+            value: 220.5,
+            formatted: "$220.50",
+            basis: "modeled",
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+        ],
+        quality: [
+          {
+            key: "roe",
+            label: "Return on Equity",
+            category: "quality",
+            value: 32.1,
+            formatted: "32.1%",
+            basis: "reported",
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+        ],
+        dividend: [
+          {
+            key: "dividend_yield",
+            label: "Dividend Yield",
+            category: "dividend",
+            value: 0.55,
+            formatted: "0.55%",
+            basis: "reported",
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+        ],
+        stability: [
+          {
+            key: "beta",
+            label: "Beta",
+            category: "stability",
+            value: 1.08,
+            formatted: "1.08",
+            basis: "reported",
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+        ],
+        last_four_quarters: [
+          {
+            quarter: "Q1 2025",
+            revenue: 120000000000,
+            netIncome: 34000000000,
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+          {
+            quarter: "Q2 2025",
+            revenue: 118000000000,
+            netIncome: 31000000000,
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+          {
+            quarter: "Q3 2025",
+            revenue: 124000000000,
+            netIncome: 36000000000,
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+          {
+            quarter: "Q4 2025",
+            revenue: 130000000000,
+            netIncome: 39000000000,
+            source: "Yahoo Finance",
+            source_url: url,
+            retrieved_at: timestamp,
+          },
+        ],
+        unknowns: [],
+      },
+      null,
+      2,
+    ),
   }
 }
 
@@ -101,6 +204,8 @@ async function makeReportDirectory() {
     fs.writeFile(path.join(outputRoot, "report.md"), artifacts.report, "utf8"),
     fs.writeFile(path.join(outputRoot, "dashboard.md"), artifacts.dashboard, "utf8"),
     fs.writeFile(path.join(outputRoot, "assumptions.json"), artifacts.assumptions, "utf8"),
+    fs.writeFile(path.join(outputRoot, "evaluation.md"), artifacts.evaluation, "utf8"),
+    fs.writeFile(path.join(outputRoot, "evaluation-snapshot.json"), artifacts.evaluationSnapshot, "utf8"),
   ])
   return {
     root,

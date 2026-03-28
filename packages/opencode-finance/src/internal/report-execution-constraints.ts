@@ -6,6 +6,7 @@ export function reportExecutionConstraintLines(input: { outputRoot: string; focu
     '- Use `financial_search` with `coverage: "comprehensive"` for numeric claims.',
     "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
     `- If Quiver setup is missing, instruct: ${input.quiverSetupHint}.`,
-    '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
+    "- After `report.md`, `dashboard.md`, `assumptions.json`, and `adjustment-log.md` are written, call `report_evaluation`.",
+    '- After `report_evaluation` writes `evaluation.md` and `evaluation-snapshot.json`, call `report_pdf` with `subcommand: "report"`.',
   ]
 }

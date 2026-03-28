@@ -19,5 +19,8 @@ describe("finance report skill contract", () => {
     expect(text).toContain("`## Variant Perception and Market-Implied Expectations`")
     expect(text).toContain("`## Risk Assessment and Red-Team`")
     expect(text).toContain("`## Monitoring Dashboard`")
+    expect(text).toContain("call `report_evaluation`")
+    expect(text).toContain("`evaluation.md`")
+    expect(text).toContain("`evaluation-snapshot.json`")
   })
 })

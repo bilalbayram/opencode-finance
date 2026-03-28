@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { reportExecutionConstraintLines } from "../../src/internal/report-execution-constraints"
 
 describe("finance plugin report runtime hints", () => {
-  test("includes explicit report_pdf subcommand for /report execution constraints", () => {
+  test("includes report_evaluation and report_pdf steps for /report execution constraints", () => {
     const lines = reportExecutionConstraintLines({
       outputRoot: "/tmp/reports/AAPL/2026-02-26",
       focus: "valuation",
@@ -10,6 +10,7 @@ describe("finance plugin report runtime hints", () => {
     })
     const text = lines.join("\n")
 
+    expect(text).toContain("call `report_evaluation`")
     expect(text).toContain('call `report_pdf` with `subcommand: "report"`')
     expect(text).toContain("- Focus area for this run: `valuation`.")
     expect(text).toContain("- Write artifacts only under `/tmp/reports/AAPL/2026-02-26`.")

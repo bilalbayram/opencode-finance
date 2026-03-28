@@ -7,6 +7,7 @@ import { assertExternalDirectory } from "../external-directory"
 import { projectRoot } from "../_shared"
 import { financialSearch } from "../../finance/orchestrator"
 import { readTextIfExists, writeBytes } from "../../runtime/fs"
+import { ReportEvaluationSnapshotSchema, type ReportEvaluationSnapshot } from "../../report/evaluation"
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -99,6 +100,8 @@ type LoadedArtifacts = {
   report: string
   dashboard?: string
   assumptions?: string
+  evaluationMarkdown?: string
+  evaluationSnapshotJson?: string
   normalizedEventsJson?: string
   deltaEventsJson?: string
   dataJson?: string
@@ -462,7 +465,10 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
   return {
     buildCoverData: ({ artifacts, hints }) => reportCoverData(artifacts.report, artifacts.dashboard, hints),
     enrichCover: async ({ info, ctx }) => enrichCover(info, ctx),
-    renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
+    renderCover: ({ pdf, info, font, icon, artifacts }) => {
+      renderReportCover(pdf, info, font, icon)
+      renderReportEvaluationPage(pdf, font, info, parseEvaluationSnapshot(artifacts.evaluationSnapshotJson))
+    },
     sectionPlan: (artifacts) => {
       const { body, sources } = extractSourcesSection(artifacts.report)
       return [
@@ -482,7 +488,14 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
       ]
     },
     qualityGate: ({ info, artifacts }) =>
-      qualityIssuesReport(info, artifacts.report, artifacts.dashboard, artifacts.assumptions),
+      qualityIssuesReport(
+        info,
+        artifacts.report,
+        artifacts.dashboard,
+        artifacts.assumptions,
+        artifacts.evaluationMarkdown,
+        artifacts.evaluationSnapshotJson,
+      ),
   }
 }
 
@@ -491,7 +504,7 @@ function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
   const dashboard = path.join(root, "dashboard.md")
   const assumptions = path.join(root, "assumptions.json")
   if (subcommand === "report") {
-    return [report, dashboard, assumptions]
+    return [report, dashboard, assumptions, path.join(root, "evaluation.md"), path.join(root, "evaluation-snapshot.json")]
   }
   if (subcommand === "political-backtest") {
     return [report, dashboard, assumptions, path.join(root, "aggregate-results.json"), path.join(root, "comparison.json")]
@@ -519,6 +532,8 @@ async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<L
       report: await readRequired(report),
       dashboard: await readOptional(dashboard),
       assumptions: await readOptional(assumptions),
+      evaluationMarkdown: await readRequired(path.join(root, "evaluation.md")),
+      evaluationSnapshotJson: await readRequired(path.join(root, "evaluation-snapshot.json")),
     }
   }
 
@@ -572,6 +587,17 @@ function defaultRootHints(root: string, subcommand: PdfSubcommand): RootHints {
     ticker: tickerLabel(path.basename(path.dirname(root))),
     date: path.basename(root),
   }
+}
+
+function parseEvaluationSnapshot(input: string | undefined): ReportEvaluationSnapshot {
+  if (!input) {
+    throw new Error("Missing required report artifact: evaluation-snapshot.json")
+  }
+  const parsed = ReportEvaluationSnapshotSchema.safeParse(JSON.parse(input) as unknown)
+  if (!parsed.success) {
+    throw new Error(`Invalid evaluation-snapshot.json: ${parsed.error.message}`)
+  }
+  return parsed.data
 }
 
 function reportCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
@@ -1230,6 +1256,8 @@ function qualityIssuesBySubcommand(input: {
   report: string
   dashboard?: string
   assumptions?: string
+  evaluationMarkdown?: string
+  evaluationSnapshotJson?: string
   normalizedEventsJson?: string
   deltaEventsJson?: string
   dataJson?: string
@@ -1269,7 +1297,14 @@ function qualityIssuesBySubcommand(input: {
     })
   }
 
-  return qualityIssuesReport(input.info, input.report, input.dashboard, input.assumptions)
+  return qualityIssuesReport(
+    input.info,
+    input.report,
+    input.dashboard,
+    input.assumptions,
+    input.evaluationMarkdown,
+    input.evaluationSnapshotJson,
+  )
 }
 
 function qualityIssuesGovernmentTrading(input: {
@@ -1475,7 +1510,14 @@ function qualityIssuesPoliticalBacktest(input: {
   return issues
 }
 
-function qualityIssuesReport(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
+function qualityIssuesReport(
+  info: Cover,
+  report: string,
+  dashboard: string | undefined,
+  assumptions: string | undefined,
+  evaluationMarkdown: string | undefined,
+  evaluationSnapshotJson: string | undefined,
+) {
   const issues: string[] = []
   const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
   critical.forEach((label) => {
@@ -1516,6 +1558,26 @@ function qualityIssuesReport(info: Cover, report: string, dashboard: string | un
       issues.push(`Core fundamental \`${item.label}\` is unresolved; include a sourced value or regenerate data before PDF export.`)
     }
   })
+
+  if (!evaluationMarkdown) {
+    issues.push("Missing required report artifact `evaluation.md`.")
+  }
+
+  if (!evaluationSnapshotJson) {
+    issues.push("Missing required report artifact `evaluation-snapshot.json`.")
+  } else {
+    const parsed = ReportEvaluationSnapshotSchema.safeParse(parseJson(evaluationSnapshotJson))
+    if (!parsed.success) {
+      issues.push("`evaluation-snapshot.json` must be valid JSON matching the deterministic evaluation schema.")
+    } else if (
+      parsed.data.fairness.length === 0 ||
+      parsed.data.quality.length === 0 ||
+      parsed.data.dividend.length === 0 ||
+      parsed.data.stability.length === 0
+    ) {
+      issues.push("`evaluation-snapshot.json` is missing one or more required metric groups.")
+    }
+  }
 
   issues.push(...dashboardSourceIssues(dashboard))
 
@@ -2000,6 +2062,236 @@ function renderReportCover(pdf: PDFDocument, info: Cover, font: FontSet, icon?: 
     })
     y -= 13
   }
+}
+
+function renderReportEvaluationPage(pdf: PDFDocument, font: FontSet, info: Cover, snapshot: ReportEvaluationSnapshot) {
+  const page = header(pdf, font, info, "Deterministic Evaluation")
+  let y = TOP
+
+  page.drawText(`Current Price: ${money(snapshot.current_price)}   Generated: ${snapshot.generated_at.slice(0, 10)}`, {
+    x: MARGIN,
+    y,
+    size: 10,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+  y -= 18
+  page.drawText("Fixed formulas, fixed source precedence, and explicit unknowns. No narrative inference on this page.", {
+    x: MARGIN,
+    y,
+    size: 8.8,
+    font: font.ui,
+    color: THEME.muted,
+  })
+  y -= 16
+
+  y = drawEvaluationGroup(page, font, y, "Fairness", snapshot.fairness)
+  y = drawEvaluationGroup(page, font, y - 10, "Quality", snapshot.quality)
+
+  const dividendHeight = evaluationGroupHeight(snapshot.dividend.length)
+  const stabilityHeight = evaluationGroupHeight(snapshot.stability.length)
+  const miniTop = y - 10
+  const miniGap = 10
+  const miniWidth = (PAGE_WIDTH - MARGIN * 2 - miniGap) / 2
+  drawEvaluationCard(page, font, MARGIN, miniTop, miniWidth, dividendHeight, "Dividend", snapshot.dividend)
+  drawEvaluationCard(page, font, MARGIN + miniWidth + miniGap, miniTop, miniWidth, stabilityHeight, "Price Stability", snapshot.stability)
+
+  const chartTop = miniTop - Math.max(dividendHeight, stabilityHeight) - 18
+  page.drawText("Last 4 Quarters", {
+    x: MARGIN,
+    y: chartTop,
+    size: 11.5,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+
+  const chartGap = 12
+  const chartWidth = (PAGE_WIDTH - MARGIN * 2 - chartGap) / 2
+  const chartHeight = 170
+  drawEvaluationChart(page, font, MARGIN, chartTop - 8, chartWidth, chartHeight, "Revenue", snapshot.last_four_quarters, "revenue")
+  drawEvaluationChart(
+    page,
+    font,
+    MARGIN + chartWidth + chartGap,
+    chartTop - 8,
+    chartWidth,
+    chartHeight,
+    "Net Income",
+    snapshot.last_four_quarters,
+    "netIncome",
+  )
+}
+
+function drawEvaluationGroup(
+  page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+  font: FontSet,
+  top: number,
+  title: string,
+  rows: ReportEvaluationSnapshot["fairness"],
+) {
+  const height = evaluationGroupHeight(rows.length)
+  drawEvaluationCard(page, font, MARGIN, top, PAGE_WIDTH - MARGIN * 2, height, title, rows)
+  return top - height
+}
+
+function evaluationGroupHeight(rowCount: number) {
+  return 30 + Math.max(1, rowCount) * 16 + 10
+}
+
+function drawEvaluationCard(
+  page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+  font: FontSet,
+  x: number,
+  top: number,
+  width: number,
+  height: number,
+  title: string,
+  rows: ReportEvaluationSnapshot["fairness"],
+) {
+  const y = top - height
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: THEME.paper,
+    borderColor: THEME.line,
+    borderWidth: 1,
+  })
+  page.drawRectangle({
+    x,
+    y: top - 24,
+    width,
+    height: 24,
+    color: THEME.card,
+  })
+  page.drawText(title, {
+    x: x + 10,
+    y: top - 17,
+    size: 10,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+
+  let rowY = top - 37
+  rows.forEach((row) => {
+    page.drawText(row.label, {
+      x: x + 10,
+      y: rowY,
+      size: 8.9,
+      font: font.ui,
+      color: THEME.text,
+    })
+    const value = row.formatted || "unknown"
+    const valueWidth = font.uiBold.widthOfTextAtSize(value, 8.9)
+    page.drawText(value, {
+      x: x + width - valueWidth - 10,
+      y: rowY,
+      size: 8.9,
+      font: font.uiBold,
+      color: row.formatted === "unknown" ? THEME.muted : THEME.ink,
+    })
+    rowY -= 16
+  })
+}
+
+function drawEvaluationChart(
+  page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+  font: FontSet,
+  x: number,
+  top: number,
+  width: number,
+  height: number,
+  title: string,
+  rows: ReportEvaluationSnapshot["last_four_quarters"],
+  key: "revenue" | "netIncome",
+) {
+  const bottom = top - height
+  page.drawRectangle({
+    x,
+    y: bottom,
+    width,
+    height,
+    color: THEME.paper,
+    borderColor: THEME.line,
+    borderWidth: 1,
+  })
+  page.drawText(title, {
+    x: x + 10,
+    y: top - 18,
+    size: 10,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+
+  const values = rows.map((row) => row[key]).filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+  if (!values.length) {
+    page.drawText("Quarterly data unavailable.", {
+      x: x + 10,
+      y: bottom + height / 2,
+      size: 9,
+      font: font.ui,
+      color: THEME.muted,
+    })
+    return
+  }
+
+  const plotLeft = x + 18
+  const plotRight = x + width - 10
+  const plotBottom = bottom + 26
+  const plotTop = top - 30
+  const plotHeight = plotTop - plotBottom
+  const plotWidth = plotRight - plotLeft
+  const minValue = key === "netIncome" ? Math.min(0, ...values) : 0
+  const maxValue = Math.max(...values, 0)
+  const spread = maxValue - minValue || 1
+  const zeroY = plotBottom + ((0 - minValue) / spread) * plotHeight
+
+  page.drawLine({
+    start: { x: plotLeft, y: zeroY },
+    end: { x: plotRight, y: zeroY },
+    thickness: 0.8,
+    color: THEME.line,
+  })
+
+  const gap = 10
+  const barWidth = (plotWidth - gap * (rows.length - 1)) / Math.max(1, rows.length)
+  rows.forEach((row, index) => {
+    const value = row[key]
+    const barX = plotLeft + index * (barWidth + gap)
+    const label = compactMoney(value)
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const valueY = plotBottom + ((value - minValue) / spread) * plotHeight
+      const heightValue = Math.abs(valueY - zeroY)
+      page.drawRectangle({
+        x: barX,
+        y: value >= 0 ? zeroY : valueY,
+        width: barWidth,
+        height: Math.max(1, heightValue),
+        color: value >= 0 ? THEME.sky : THEME.riskBg,
+        borderColor: value >= 0 ? THEME.sky : THEME.risk,
+        borderWidth: 0.8,
+      })
+      page.drawText(label, {
+        x: barX,
+        y: value >= 0 ? Math.min(plotTop + 4, valueY + 4) : Math.max(plotBottom - 10, valueY - 12),
+        size: 6.8,
+        font: font.ui,
+        color: THEME.muted,
+      })
+    }
+
+    const quarter = shortQuarter(row.quarter)
+    const labelWidth = font.ui.widthOfTextAtSize(quarter, 7.2)
+    page.drawText(quarter, {
+      x: barX + (barWidth - labelWidth) / 2,
+      y: bottom + 10,
+      size: 7.2,
+      font: font.ui,
+      color: THEME.muted,
+    })
+  })
 }
 
 function renderDarkpoolCover(
@@ -3158,6 +3450,31 @@ function field(report: string, label: string) {
   return
 }
 
+function money(input: number | null) {
+  if (typeof input !== "number" || !Number.isFinite(input)) return "unknown"
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(input)
+}
+
+function compactMoney(input: number | null) {
+  if (typeof input !== "number" || !Number.isFinite(input)) return "unknown"
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: Math.abs(input) >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits: 1,
+  }).format(input)
+}
+
+function shortQuarter(input: string) {
+  const match = input.match(/^(Q[1-4])\s+(\d{4})$/)
+  if (!match) return input
+  return `${match[1]}'${match[2].slice(2)}`
+}
+
 function escape(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
@@ -3172,6 +3489,7 @@ function hex(input: string) {
 
 export const ReportPdfInternal = {
   parsePdfSubcommand,
+  parseEvaluationSnapshot,
   getPdfProfile,
   sectionPlanForSubcommand,
   coverData: reportCoverData,
