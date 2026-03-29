@@ -61,7 +61,9 @@ jobs:
             PREVIOUS_VERSION="$(git show "HEAD^:${PACKAGE_JSON}" | bun -e "const pkg = JSON.parse(await Bun.stdin.text()); process.stdout.write(pkg.version ?? '')")"
           fi
 
-          if [ "${CURRENT_VERSION}" = "${PREVIOUS_VERSION}" ]; then
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            CHANGED="true"
+          elif [ "${CURRENT_VERSION}" = "${PREVIOUS_VERSION}" ]; then
             CHANGED="false"
           else
             CHANGED="true"
