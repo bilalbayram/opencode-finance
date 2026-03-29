@@ -1,22 +1,48 @@
 import fs from "fs/promises"
 import path from "path"
 import z from "zod"
-import { Auth } from "../auth"
-import { Env } from "../env"
-import { FINANCE_AUTH_PROVIDER, type FinanceAuthProviderID } from "../finance/auth-provider"
 import { normalizeTicker, normalizeErrorText } from "../finance/parser"
+import { asText, rows, toNumber as sharedToNumber, toPercent as sharedToPercent } from "../finance/parse-helpers"
 import { abortAfterAny } from "../util/abort"
 
-const YAHOO_BASE = "https://query1.finance.yahoo.com"
-const FINNHUB_BASE = "https://finnhub.io/api/v1"
-const POLYGON_BASE = "https://api.polygon.io"
+const YAHOO_QUERY1_BASE = "https://query1.finance.yahoo.com"
+const YAHOO_QUERY2_BASE = "https://query2.finance.yahoo.com"
+const YAHOO_LABEL = "Yahoo Finance"
 const DEFAULT_TIMEOUT_MS = 12_000
-const FALLBACK_TAX_RATE = 21
 const DCF_DISCOUNT_RATE = 0.1
 const DCF_TERMINAL_GROWTH_RATE = 0.025
 const DCF_GROWTH_CAP_PERCENT = 12
 const DCF_YEARS = 5
+const TIMESERIES_START_UNIX_SECONDS = Math.floor(Date.UTC(2016, 11, 31) / 1000)
 
+const SUMMARY_MODULES = "financialData,defaultKeyStatistics,summaryDetail,price"
+
+const ANNUAL_TIMESERIES_KEYS = [
+  "TotalRevenue",
+  "NetIncome",
+  "GrossProfit",
+  "OperatingIncome",
+  "PretaxIncome",
+  "TaxProvision",
+  "TaxRateForCalcs",
+  "OperatingCashFlow",
+  "CurrentAssets",
+  "CurrentLiabilities",
+  "TotalAssets",
+  "TotalLiabilitiesNetMinorityInterest",
+  "StockholdersEquity",
+  "CashAndCashEquivalents",
+  "LongTermDebt",
+  "CurrentDebt",
+  "TotalDebt",
+  "RetainedEarnings",
+  "BasicAverageShares",
+  "DilutedAverageShares",
+] as const
+
+const QUARTERLY_TIMESERIES_KEYS = ["TotalRevenue", "NetIncome"] as const
+
+//#region Schemas and types
 export const EvaluationBasisSchema = z.enum(["reported", "derived", "modeled"])
 export const EvaluationCategorySchema = z.enum(["fairness", "quality", "dividend", "stability"])
 
@@ -65,29 +91,7 @@ export interface ReportEvaluationArtifacts {
   snapshot_path: string
 }
 
-type SourceKey =
-  | "yahoo_summary"
-  | "finnhub_quote"
-  | "finnhub_metric"
-  | "finnhub_price_target"
-  | "polygon_annual"
-  | "polygon_quarterly"
-  | "finnhub_annual"
-  | "finnhub_quarterly"
-
-type SourceMeta = {
-  key: SourceKey
-  label: string
-  url: string
-  retrievedAt: string
-}
-
-type SourceFetch<T> = {
-  meta: SourceMeta
-  data?: T
-  error?: string
-}
-
+type SourceKey = "summary" | "annual" | "quarterly"
 type StatementField =
   | "revenue"
   | "netIncome"
@@ -96,8 +100,6 @@ type StatementField =
   | "pretaxIncome"
   | "incomeTaxExpense"
   | "operatingCashFlow"
-  | "capex"
-  | "freeCashFlow"
   | "currentAssets"
   | "currentLiabilities"
   | "totalAssets"
@@ -112,10 +114,22 @@ type StatementField =
   | "sharesDiluted"
   | "effectiveTaxRatePercent"
 
+type SourceMeta = {
+  key: SourceKey
+  label: string
+  url: string
+  retrievedAt: string
+}
+
+type SourceFetch<T> = {
+  meta: SourceMeta
+  data?: T
+  error?: string
+}
+
 type StatementPeriod = {
   timeframe: "annual" | "quarterly"
   endDate: string
-  fiscalPeriod: string
   label: string
   revenue: number | null
   netIncome: number | null
@@ -124,8 +138,6 @@ type StatementPeriod = {
   pretaxIncome: number | null
   incomeTaxExpense: number | null
   operatingCashFlow: number | null
-  capex: number | null
-  freeCashFlow: number | null
   currentAssets: number | null
   currentLiabilities: number | null
   totalAssets: number | null
@@ -139,56 +151,32 @@ type StatementPeriod = {
   sharesBasic: number | null
   sharesDiluted: number | null
   effectiveTaxRatePercent: number | null
-  sources: Partial<Record<StatementField, SourceKey>>
 }
 
 type YahooSummaryData = {
   currentPrice: number | null
   marketCap: number | null
-  trailingPe: number | null
-  priceToSales: number | null
-  priceToBook: number | null
-  dividendYieldPercent: number | null
-  payoutRatioPercent: number | null
-  beta: number | null
   sharesOutstanding: number | null
   analystPriceTargetMedian: number | null
   revenueTtm: number | null
+  revenueGrowthPercent: number | null
   netIncomeTtm: number | null
-  grossMarginPercent: number | null
-  debtToEquity: number | null
-  roePercent: number | null
   freeCashFlowTtm: number | null
-}
-
-type FinnhubQuoteData = {
-  currentPrice: number | null
-}
-
-type FinnhubMetricData = {
-  trailingPe: number | null
-  priceToSales: number | null
-  priceToBook: number | null
+  grossMarginPercent: number | null
   dividendYieldPercent: number | null
   payoutRatioPercent: number | null
   beta: number | null
-  sharesOutstanding: number | null
-  epsGrowthPercent: number | null
-  revenueTtm: number | null
-  netIncomeTtm: number | null
-  grossMarginPercent: number | null
-  debtToEquity: number | null
-  roePercent: number | null
-  freeCashFlowTtm: number | null
-}
-
-type FinnhubPriceTargetData = {
-  targetMedian: number | null
 }
 
 type DerivedResult = {
   value: number | null
   reason?: string
+}
+
+type TimeSeriesFieldSpec = {
+  key: string
+  field: StatementField
+  parser: (input: unknown) => number | null
 }
 
 type DcfInput = {
@@ -214,7 +202,7 @@ type PiotroskiInput = {
   currentNetIncome: number | null
   currentOperatingCashFlow: number | null
   currentTotalAssets: number | null
-  currentLongTermDebt: number | null
+  currentTotalDebt: number | null
   currentCurrentAssets: number | null
   currentCurrentLiabilities: number | null
   currentGrossProfit: number | null
@@ -223,7 +211,7 @@ type PiotroskiInput = {
   priorNetIncome: number | null
   priorOperatingCashFlow: number | null
   priorTotalAssets: number | null
-  priorLongTermDebt: number | null
+  priorTotalDebt: number | null
   priorCurrentAssets: number | null
   priorCurrentLiabilities: number | null
   priorGrossProfit: number | null
@@ -239,12 +227,9 @@ type AltmanInput = {
   totalAssets: number | null
   totalLiabilities: number | null
 }
+//#endregion
 
-function asText(input: unknown): string {
-  if (input === null || input === undefined) return ""
-  return String(input)
-}
-
+//#region Formatting helpers
 function fromRaw(input: unknown): unknown {
   if (input && typeof input === "object" && "raw" in input) {
     return (input as Record<string, unknown>).raw
@@ -253,64 +238,23 @@ function fromRaw(input: unknown): unknown {
 }
 
 function toNumber(input: unknown): number | null {
-  const value = fromRaw(input)
-  if (typeof value === "number" && Number.isFinite(value)) return value
-  const text = asText(value).replace(/,/g, "").trim()
-  if (!text) return null
-  const parsed = Number(text.replace(/[^0-9.-]/g, ""))
-  if (!Number.isFinite(parsed)) return null
-  return parsed
+  return sharedToNumber(fromRaw(input))
 }
 
 function toPercent(input: unknown): number | null {
-  const value = toNumber(input)
-  if (value === null) return null
-  if (Math.abs(value) <= 1) return Number((value * 100).toFixed(6))
-  return value
-}
-
-function toIsoDate(input: unknown) {
-  const raw = asText(input).trim()
-  if (!raw) return new Date().toISOString()
-  const numeric = Number(raw)
-  if (Number.isFinite(numeric) && numeric > 0) {
-    const ms = numeric > 9_999_999_999 ? numeric : numeric * 1000
-    return new Date(ms).toISOString()
-  }
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString()
-  return date.toISOString()
+  return sharedToPercent(fromRaw(input))
 }
 
 function hasNumber(input: unknown): input is number {
   return typeof input === "number" && Number.isFinite(input)
 }
 
-function rows(input: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => (item && typeof item === "object" ? [item as Record<string, unknown>] : []))
-}
-
-function firstResult(payload: unknown) {
-  if (!payload || typeof payload !== "object") return {} as Record<string, unknown>
-  const result = ((payload as Record<string, unknown>).quoteSummary as Record<string, unknown> | undefined)?.result
-  return rows(result)[0] ?? {}
-}
-
-function emptyFetch(key: SourceKey, label: string, url: string, error: string): SourceFetch<Record<string, unknown>> {
-  return {
-    meta: {
-      key,
-      label,
-      url,
-      retrievedAt: new Date().toISOString(),
-    },
-    error,
-  }
-}
-
-function sumNullableNumbers(values: Array<number | null>): number {
-  return values.reduce<number>((acc, item) => acc + (item ?? 0), 0)
+function dateOnly(input: unknown) {
+  const value = asText(input).trim()
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toISOString().slice(0, 10)
 }
 
 function compactCurrency(input: number | null) {
@@ -319,14 +263,6 @@ function compactCurrency(input: number | null) {
     style: "currency",
     currency: "USD",
     notation: Math.abs(input) >= 1_000_000 ? "compact" : "standard",
-    maximumFractionDigits: Math.abs(input) >= 1_000_000 ? 2 : 2,
-  }).format(input)
-}
-
-function compactNumber(input: number | null) {
-  if (!hasNumber(input)) return "unknown"
-  return new Intl.NumberFormat("en-US", {
-    notation: Math.abs(input) >= 1_000 ? "compact" : "standard",
     maximumFractionDigits: 2,
   }).format(input)
 }
@@ -357,189 +293,167 @@ function decimalText(input: number | null) {
 
 function scoreText(input: number | null) {
   if (!hasNumber(input)) return "unknown"
-  return Number.isInteger(input) ? `${input}` : trimNumber(input)
+  if (Number.isInteger(input)) return `${input}`
+  return trimNumber(input)
 }
 
 function trimNumber(input: number, digits = 2) {
   return input.toFixed(digits).replace(/\.?0+$/, "")
 }
 
-function isoDate(input: string) {
-  return toIsoDate(input).slice(0, 10)
+function quarterLabel(endDate: string) {
+  const date = new Date(endDate)
+  if (Number.isNaN(date.getTime())) return endDate || "unknown"
+  const quarter = Math.floor(date.getUTCMonth() / 3) + 1
+  return `Q${quarter} ${date.getUTCFullYear()}`
 }
 
-function periodLabel(endDate: string, fiscalPeriod: string, fallback: "annual" | "quarterly") {
-  const year = endDate.slice(0, 4) || "unknown"
-  const period = fiscalPeriod.trim().toUpperCase()
-  if (/^Q[1-4]$/.test(period)) return `${period} ${year}`
-  if (period === "FY") return `FY ${year}`
-  return fallback === "quarterly" ? `Q ${year}` : `FY ${year}`
+function annualLabel(endDate: string) {
+  const date = new Date(endDate)
+  if (Number.isNaN(date.getTime())) return endDate || "unknown"
+  return `FY ${date.getUTCFullYear()}`
 }
 
-function statementKey(period: Pick<StatementPeriod, "timeframe" | "endDate" | "fiscalPeriod">) {
-  return `${period.timeframe}:${period.endDate}:${period.fiscalPeriod}`
+function escapeCell(value: string) {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
+}
+//#endregion
+
+//#region Yahoo fetch
+function quoteSummaryUrl(ticker: string) {
+  return `${YAHOO_QUERY1_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(SUMMARY_MODULES)}`
 }
 
-async function credential(providerID: FinanceAuthProviderID): Promise<string | undefined> {
-  const env = FINANCE_AUTH_PROVIDER[providerID].env.map((key) => Env.get(key)?.trim()).find(Boolean)
-  if (env) return env
-  const auth = await Auth.get(providerID)
-  if (auth?.type === "api" || auth?.type === "wellknown") return auth.key
-  return undefined
+function timeSeriesUrl(ticker: string, timeframe: "annual" | "quarterly", keys: readonly string[]) {
+  const prefix = timeframe === "annual" ? "annual" : "quarterly"
+  const params = new URLSearchParams({
+    symbol: ticker,
+    type: keys.map((key) => `${prefix}${key}`).join(","),
+    period1: String(TIMESERIES_START_UNIX_SECONDS),
+    period2: String(Math.ceil(Date.now() / 1000)),
+  })
+  return `${YAHOO_QUERY2_BASE}/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(ticker)}?${params.toString()}`
 }
 
 async function fetchJson<T>(input: {
   key: SourceKey
-  label: string
   url: string
-  headers?: Record<string, string>
   signal?: AbortSignal
 }): Promise<SourceFetch<T>> {
   const { signal, clearTimeout } = abortAfterAny(DEFAULT_TIMEOUT_MS, ...(input.signal ? [input.signal] : []))
+  const meta: SourceMeta = {
+    key: input.key,
+    label: YAHOO_LABEL,
+    url: input.url,
+    retrievedAt: new Date().toISOString(),
+  }
+
   try {
     const response = await fetch(input.url, {
       signal,
       headers: {
         Accept: "application/json",
         "User-Agent": "opencode-finance/1.0",
-        ...input.headers,
       },
     })
     clearTimeout()
+
     if (!response.ok) {
       const text = await response.text()
       return {
-        meta: {
-          key: input.key,
-          label: input.label,
-          url: input.url,
-          retrievedAt: new Date().toISOString(),
-        },
+        meta,
         error: `${response.status}: ${text || response.statusText}`,
       }
     }
+
     return {
-      meta: {
-        key: input.key,
-        label: input.label,
-        url: input.url,
-        retrievedAt: new Date().toISOString(),
-      },
+      meta,
       data: (await response.json()) as T,
     }
   } catch (error) {
     clearTimeout()
     return {
-      meta: {
-        key: input.key,
-        label: input.label,
-        url: input.url,
-        retrievedAt: new Date().toISOString(),
-      },
+      meta,
       error: normalizeErrorText(error),
     }
   }
 }
+//#endregion
+
+//#region Yahoo parse
+const ANNUAL_FIELD_SPECS: TimeSeriesFieldSpec[] = [
+  { key: "TotalRevenue", field: "revenue", parser: toNumber },
+  { key: "NetIncome", field: "netIncome", parser: toNumber },
+  { key: "GrossProfit", field: "grossProfit", parser: toNumber },
+  { key: "OperatingIncome", field: "operatingIncome", parser: toNumber },
+  { key: "PretaxIncome", field: "pretaxIncome", parser: toNumber },
+  { key: "TaxProvision", field: "incomeTaxExpense", parser: toNumber },
+  { key: "TaxRateForCalcs", field: "effectiveTaxRatePercent", parser: toPercent },
+  { key: "OperatingCashFlow", field: "operatingCashFlow", parser: toNumber },
+  { key: "CurrentAssets", field: "currentAssets", parser: toNumber },
+  { key: "CurrentLiabilities", field: "currentLiabilities", parser: toNumber },
+  { key: "TotalAssets", field: "totalAssets", parser: toNumber },
+  { key: "TotalLiabilitiesNetMinorityInterest", field: "totalLiabilities", parser: toNumber },
+  { key: "StockholdersEquity", field: "equity", parser: toNumber },
+  { key: "CashAndCashEquivalents", field: "cash", parser: toNumber },
+  { key: "LongTermDebt", field: "longTermDebt", parser: toNumber },
+  { key: "CurrentDebt", field: "currentDebt", parser: toNumber },
+  { key: "TotalDebt", field: "totalDebt", parser: toNumber },
+  { key: "RetainedEarnings", field: "retainedEarnings", parser: toNumber },
+  { key: "BasicAverageShares", field: "sharesBasic", parser: toNumber },
+  { key: "DilutedAverageShares", field: "sharesDiluted", parser: toNumber },
+]
+
+const QUARTERLY_FIELD_SPECS: TimeSeriesFieldSpec[] = [
+  { key: "TotalRevenue", field: "revenue", parser: toNumber },
+  { key: "NetIncome", field: "netIncome", parser: toNumber },
+]
+
+function firstQuoteSummaryResult(payload: unknown) {
+  if (!payload || typeof payload !== "object") return {}
+  const quoteSummary = (payload as Record<string, unknown>).quoteSummary
+  if (!quoteSummary || typeof quoteSummary !== "object") return {}
+  const result = rows((quoteSummary as Record<string, unknown>).result)
+  return result[0] ?? {}
+}
+
+function quoteSummaryError(payload: unknown) {
+  if (!payload || typeof payload !== "object") return ""
+  const quoteSummary = (payload as Record<string, unknown>).quoteSummary
+  if (!quoteSummary || typeof quoteSummary !== "object") return ""
+  const error = (quoteSummary as Record<string, unknown>).error
+  if (!error || typeof error !== "object") return ""
+  return asText((error as Record<string, unknown>).description).trim()
+}
 
 function parseYahooSummary(payload: unknown): YahooSummaryData {
-  const row = firstResult(payload)
+  const row = firstQuoteSummaryResult(payload)
   const financialData = (row.financialData as Record<string, unknown> | undefined) ?? {}
   const defaultKeyStatistics = (row.defaultKeyStatistics as Record<string, unknown> | undefined) ?? {}
   const summaryDetail = (row.summaryDetail as Record<string, unknown> | undefined) ?? {}
   const price = (row.price as Record<string, unknown> | undefined) ?? {}
+
   return {
     currentPrice: toNumber(price.regularMarketPrice),
     marketCap: toNumber(price.marketCap ?? summaryDetail.marketCap),
-    trailingPe: toNumber(summaryDetail.trailingPE ?? defaultKeyStatistics.trailingPE),
-    priceToSales: toNumber(summaryDetail.priceToSalesTrailing12Months ?? defaultKeyStatistics.priceToSalesTrailing12Months),
-    priceToBook: toNumber(defaultKeyStatistics.priceToBook),
-    dividendYieldPercent: toPercent(summaryDetail.dividendYield),
-    payoutRatioPercent: toPercent(summaryDetail.payoutRatio),
-    beta: toNumber(defaultKeyStatistics.beta ?? defaultKeyStatistics.beta3Year),
     sharesOutstanding: toNumber(defaultKeyStatistics.sharesOutstanding ?? price.sharesOutstanding),
     analystPriceTargetMedian: toNumber(financialData.targetMedianPrice),
     revenueTtm: toNumber(financialData.totalRevenue),
+    revenueGrowthPercent: toPercent(financialData.revenueGrowth),
     netIncomeTtm: toNumber(financialData.netIncomeToCommon),
-    grossMarginPercent: toPercent(financialData.grossMargins),
-    debtToEquity: toNumber(financialData.debtToEquity),
-    roePercent: toPercent(financialData.returnOnEquity),
     freeCashFlowTtm: toNumber(financialData.freeCashflow),
+    grossMarginPercent: toPercent(financialData.grossMargins),
+    dividendYieldPercent: toPercent(summaryDetail.dividendYield),
+    payoutRatioPercent: toPercent(summaryDetail.payoutRatio),
+    beta: toNumber(defaultKeyStatistics.beta ?? defaultKeyStatistics.beta3Year),
   }
 }
 
-function parseFinnhubQuote(payload: unknown): FinnhubQuoteData {
-  const row = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
+function createStatementPeriod(timeframe: "annual" | "quarterly", endDate: string): StatementPeriod {
   return {
-    currentPrice: toNumber(row.c),
-  }
-}
-
-function pickMetricValue(metric: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = metric[key]
-    const percent = /yield|ratio|margin|growth|roe|roa|roic|return/i.test(key) ? toPercent(value) : toNumber(value)
-    if (percent !== null) return percent
-  }
-  return null
-}
-
-function parseFinnhubMetric(payload: unknown): FinnhubMetricData {
-  const metric = payload && typeof payload === "object" ? (((payload as Record<string, unknown>).metric as Record<string, unknown> | undefined) ?? {}) : {}
-  return {
-    trailingPe: pickMetricValue(metric, ["peTTM", "peNormalizedTTM", "peNormalizedAnnual"]),
-    priceToSales: pickMetricValue(metric, ["psTTM", "psAnnual"]),
-    priceToBook: pickMetricValue(metric, ["pbQuarterly", "pbAnnual"]),
-    dividendYieldPercent: pickMetricValue(metric, ["dividendYieldIndicatedAnnual", "currentDividendYieldTTM", "dividendYieldTTM"]),
-    payoutRatioPercent: pickMetricValue(metric, ["payoutRatioTTM", "payoutRatioAnnual"]),
-    beta: pickMetricValue(metric, ["beta"]),
-    sharesOutstanding: pickMetricValue(metric, ["shareOutstanding", "sharesOutstanding"]),
-    epsGrowthPercent: pickMetricValue(metric, [
-      "epsGrowthTTMYoy",
-      "epsGrowthQuarterlyYoy",
-      "epsGrowthTTM",
-      "epsGrowth3Y",
-      "epsGrowth5Y",
-    ]),
-    revenueTtm: pickMetricValue(metric, ["ttmRevenue"]),
-    netIncomeTtm: pickMetricValue(metric, ["netIncomeTTM", "netIncome"]),
-    grossMarginPercent: pickMetricValue(metric, ["grossMarginTTM", "grossMargin"]),
-    debtToEquity: pickMetricValue(metric, ["totalDebtToEquityQuarterly", "totalDebtToEquityAnnual"]),
-    roePercent: pickMetricValue(metric, ["roeTTM", "roaeTTM"]),
-    freeCashFlowTtm: pickMetricValue(metric, ["freeCashFlowTTM", "freeCashFlowAnnual"]),
-  }
-}
-
-function parseFinnhubPriceTarget(payload: unknown): FinnhubPriceTargetData {
-  const row = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
-  return {
-    targetMedian: toNumber(row.targetMedian),
-  }
-}
-
-function metricObjectValue(input: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = input[key]
-    if (value && typeof value === "object" && "value" in value) {
-      const parsed = toNumber((value as Record<string, unknown>).value)
-      if (parsed !== null) return parsed
-    }
-    const parsed = toNumber(value)
-    if (parsed !== null) return parsed
-  }
-  return null
-}
-
-function statementBase(input: {
-  timeframe: "annual" | "quarterly"
-  endDate: string
-  fiscalPeriod: string
-  sourceKey: SourceKey
-}) {
-  return {
-    timeframe: input.timeframe,
-    endDate: isoDate(input.endDate || new Date().toISOString()),
-    fiscalPeriod: input.fiscalPeriod || (input.timeframe === "annual" ? "FY" : ""),
-    label: periodLabel(isoDate(input.endDate || new Date().toISOString()), input.fiscalPeriod, input.timeframe),
+    timeframe,
+    endDate,
+    label: timeframe === "annual" ? annualLabel(endDate) : quarterLabel(endDate),
     revenue: null,
     netIncome: null,
     grossProfit: null,
@@ -547,8 +461,6 @@ function statementBase(input: {
     pretaxIncome: null,
     incomeTaxExpense: null,
     operatingCashFlow: null,
-    capex: null,
-    freeCashFlow: null,
     currentAssets: null,
     currentLiabilities: null,
     totalAssets: null,
@@ -562,397 +474,92 @@ function statementBase(input: {
     sharesBasic: null,
     sharesDiluted: null,
     effectiveTaxRatePercent: null,
-    sources: {} as Partial<Record<StatementField, SourceKey>>,
-  } satisfies StatementPeriod
-}
-
-function setStatementValue(period: StatementPeriod, field: StatementField, value: number | null, sourceKey: SourceKey) {
-  period[field] = value
-  if (value !== null) {
-    period.sources[field] = sourceKey
   }
 }
 
-function parsePolygonStatement(entry: Record<string, unknown>, timeframe: "annual" | "quarterly", sourceKey: SourceKey): StatementPeriod {
-  const financials = entry.financials && typeof entry.financials === "object" ? (entry.financials as Record<string, unknown>) : {}
-  const income = financials.income_statement && typeof financials.income_statement === "object"
-    ? (financials.income_statement as Record<string, unknown>)
-    : {}
-  const balance = financials.balance_sheet && typeof financials.balance_sheet === "object"
-    ? (financials.balance_sheet as Record<string, unknown>)
-    : {}
-  const cash = financials.cash_flow_statement && typeof financials.cash_flow_statement === "object"
-    ? (financials.cash_flow_statement as Record<string, unknown>)
-    : {}
-  const period = statementBase({
-    timeframe,
-    endDate: asText(entry.end_date || entry.filing_date).trim(),
-    fiscalPeriod: asText(entry.fiscal_period).trim().toUpperCase(),
-    sourceKey,
-  })
+function finalizeStatementPeriod(period: StatementPeriod): StatementPeriod {
+  const next = { ...period }
 
-  setStatementValue(period, "revenue", metricObjectValue(income, ["revenues", "sales_revenue_net"]), sourceKey)
-  setStatementValue(period, "netIncome", metricObjectValue(income, ["net_income_loss"]), sourceKey)
-  setStatementValue(period, "grossProfit", metricObjectValue(income, ["gross_profit"]), sourceKey)
-  setStatementValue(period, "operatingIncome", metricObjectValue(income, ["operating_income_loss", "operating_income"]), sourceKey)
-  setStatementValue(
-    period,
-    "pretaxIncome",
-    metricObjectValue(income, ["income_before_tax_expense_benefit", "pretax_income_loss", "income_before_tax"]),
-    sourceKey,
-  )
-  setStatementValue(period, "incomeTaxExpense", metricObjectValue(income, ["income_tax_expense_benefit"]), sourceKey)
-  setStatementValue(
-    period,
-    "operatingCashFlow",
-    metricObjectValue(cash, [
-      "net_cash_flow_from_operating_activities",
-      "net_cash_flow_from_operating_activities_continuing",
-      "net_cash_provided_by_used_in_operating_activities",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "capex",
-    metricObjectValue(cash, ["capital_expenditure", "capital_expenditures", "payments_to_acquire_property_plant_and_equipment"]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "currentAssets",
-    metricObjectValue(balance, ["current_assets", "assets_current"]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "currentLiabilities",
-    metricObjectValue(balance, ["current_liabilities", "liabilities_current"]),
-    sourceKey,
-  )
-  setStatementValue(period, "totalAssets", metricObjectValue(balance, ["assets"]), sourceKey)
-  setStatementValue(period, "totalLiabilities", metricObjectValue(balance, ["liabilities"]), sourceKey)
-  setStatementValue(
-    period,
-    "equity",
-    metricObjectValue(balance, ["equity", "stockholders_equity", "stockholders_equity_including_portion_attributable_to_noncontrolling_interest"]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "cash",
-    metricObjectValue(balance, [
-      "cash_and_cash_equivalents_at_carrying_value",
-      "cash_cash_equivalents_and_short_term_investments",
-      "cash_and_short_term_investments",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "longTermDebt",
-    metricObjectValue(balance, [
-      "long_term_debt_noncurrent",
-      "long_term_debt",
-      "long_term_debt_and_capital_lease_obligations",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "currentDebt",
-    metricObjectValue(balance, ["long_term_debt_current", "debt_current", "short_term_borrowings"]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "retainedEarnings",
-    metricObjectValue(balance, ["retained_earnings", "retained_earnings_accumulated_deficit"]),
-    sourceKey,
-  )
-  const dilutedShares =
-    metricObjectValue(income, [
-      "weighted_average_number_of_diluted_shares_outstanding",
-      "weighted_average_number_of_share_outstanding_diluted",
-    ]) ?? metricObjectValue(balance, ["common_stock_shares_outstanding"])
-  const basicShares =
-    metricObjectValue(income, [
-      "weighted_average_number_of_shares_outstanding_basic",
-      "weighted_average_number_of_share_outstanding_basic_and_diluted",
-    ]) ?? metricObjectValue(balance, ["common_stock_shares_outstanding"])
-  setStatementValue(period, "sharesDiluted", dilutedShares, sourceKey)
-  setStatementValue(period, "sharesBasic", basicShares, sourceKey)
+  if (next.totalDebt === null && next.longTermDebt !== null && next.currentDebt !== null) {
+    next.totalDebt = next.longTermDebt + next.currentDebt
+  }
 
-  const totalDebt = sumNullableNumbers([period.longTermDebt, period.currentDebt])
-  if (totalDebt > 0) {
-    setStatementValue(period, "totalDebt", totalDebt, sourceKey)
+  if (next.effectiveTaxRatePercent === null && next.incomeTaxExpense !== null && next.pretaxIncome !== null && next.pretaxIncome > 0) {
+    next.effectiveTaxRatePercent = (next.incomeTaxExpense / next.pretaxIncome) * 100
   }
-  if (period.operatingCashFlow !== null) {
-    const freeCashFlow = period.capex !== null ? period.operatingCashFlow - Math.abs(period.capex) : null
-    if (freeCashFlow !== null) {
-      setStatementValue(period, "freeCashFlow", freeCashFlow, sourceKey)
-    }
-  }
-  if (period.incomeTaxExpense !== null && period.pretaxIncome !== null && period.pretaxIncome > 0) {
-    setStatementValue(period, "effectiveTaxRatePercent", (period.incomeTaxExpense / period.pretaxIncome) * 100, sourceKey)
-  }
-  return period
-}
 
-function statementValue(rowsInput: Record<string, unknown>[], concepts: string[]) {
-  if (!rowsInput.length) return null
-  for (const concept of concepts) {
-    const found = rowsInput.find((row) => asText(row.concept).toLowerCase() === concept.toLowerCase())
-    const value = toNumber(found?.value)
-    if (value !== null) return value
-  }
-  return null
-}
-
-function parseFinnhubStatement(entry: Record<string, unknown>, timeframe: "annual" | "quarterly", sourceKey: SourceKey): StatementPeriod {
-  const report = entry.report && typeof entry.report === "object" ? (entry.report as Record<string, unknown>) : {}
-  const income = rows(report.ic)
-  const balance = rows(report.bs)
-  const cash = rows(report.cf)
-  const fiscalPeriod =
-    timeframe === "quarterly" && hasNumber(toNumber(entry.quarter)) ? `Q${toNumber(entry.quarter)}` : "FY"
-  const period = statementBase({
-    timeframe,
-    endDate: asText(entry.endDate || entry.filedDate || entry.acceptedDate).trim(),
-    fiscalPeriod,
-    sourceKey,
-  })
-
-  setStatementValue(
-    period,
-    "revenue",
-    statementValue(income, [
-      "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
-      "us-gaap_Revenues",
-      "us-gaap_SalesRevenueNet",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(period, "netIncome", statementValue(income, ["us-gaap_NetIncomeLoss"]), sourceKey)
-  setStatementValue(period, "grossProfit", statementValue(income, ["us-gaap_GrossProfit"]), sourceKey)
-  setStatementValue(period, "operatingIncome", statementValue(income, ["us-gaap_OperatingIncomeLoss"]), sourceKey)
-  setStatementValue(period, "pretaxIncome", statementValue(income, ["us-gaap_IncomeBeforeTaxExpenseBenefit"]), sourceKey)
-  setStatementValue(period, "incomeTaxExpense", statementValue(income, ["us-gaap_IncomeTaxExpenseBenefit"]), sourceKey)
-  setStatementValue(
-    period,
-    "operatingCashFlow",
-    statementValue(cash, ["us-gaap_NetCashProvidedByUsedInOperatingActivities"]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "capex",
-    statementValue(cash, [
-      "us-gaap_PaymentsToAcquirePropertyPlantAndEquipment",
-      "us-gaap_PaymentsToAcquireProductiveAssets",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(period, "currentAssets", statementValue(balance, ["us-gaap_AssetsCurrent"]), sourceKey)
-  setStatementValue(period, "currentLiabilities", statementValue(balance, ["us-gaap_LiabilitiesCurrent"]), sourceKey)
-  setStatementValue(period, "totalAssets", statementValue(balance, ["us-gaap_Assets"]), sourceKey)
-  setStatementValue(period, "totalLiabilities", statementValue(balance, ["us-gaap_Liabilities"]), sourceKey)
-  setStatementValue(
-    period,
-    "equity",
-    statementValue(balance, [
-      "us-gaap_StockholdersEquity",
-      "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "cash",
-    statementValue(balance, [
-      "us-gaap_CashAndCashEquivalentsAtCarryingValue",
-      "us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(period, "longTermDebt", statementValue(balance, ["us-gaap_LongTermDebtNoncurrent"]), sourceKey)
-  setStatementValue(
-    period,
-    "currentDebt",
-    statementValue(balance, ["us-gaap_LongTermDebtCurrent", "us-gaap_DebtCurrent", "us-gaap_ShortTermBorrowings"]),
-    sourceKey,
-  )
-  setStatementValue(period, "retainedEarnings", statementValue(balance, ["us-gaap_RetainedEarningsAccumulatedDeficit"]), sourceKey)
-  setStatementValue(
-    period,
-    "sharesDiluted",
-    statementValue(income, [
-      "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",
-      "us-gaap_CommonStockSharesOutstanding",
-    ]),
-    sourceKey,
-  )
-  setStatementValue(
-    period,
-    "sharesBasic",
-    statementValue(income, [
-      "us-gaap_WeightedAverageNumberOfSharesOutstandingBasic",
-      "us-gaap_CommonStockSharesOutstanding",
-    ]),
-    sourceKey,
-  )
-
-  const totalDebt = sumNullableNumbers([period.longTermDebt, period.currentDebt])
-  if (totalDebt > 0) {
-    setStatementValue(period, "totalDebt", totalDebt, sourceKey)
-  }
-  if (period.operatingCashFlow !== null) {
-    const freeCashFlow = period.capex !== null ? period.operatingCashFlow - Math.abs(period.capex) : null
-    if (freeCashFlow !== null) {
-      setStatementValue(period, "freeCashFlow", freeCashFlow, sourceKey)
-    }
-  }
-  if (period.incomeTaxExpense !== null && period.pretaxIncome !== null && period.pretaxIncome > 0) {
-    setStatementValue(period, "effectiveTaxRatePercent", (period.incomeTaxExpense / period.pretaxIncome) * 100, sourceKey)
-  }
-  return period
+  return next
 }
 
 function sortPeriods(periods: StatementPeriod[]) {
   return [...periods].sort((left, right) => {
-    if (left.endDate !== right.endDate) return left.endDate < right.endDate ? 1 : -1
-    return left.fiscalPeriod < right.fiscalPeriod ? 1 : -1
+    if (left.endDate === right.endDate) return 0
+    return left.endDate < right.endDate ? 1 : -1
   })
 }
 
-function mergePeriods(primary: StatementPeriod[], fallback: StatementPeriod[]) {
-  const fallbackByKey = new Map(fallback.map((item) => [statementKey(item), item]))
-  const merged = primary.map((item) => mergePeriod(item, fallbackByKey.get(statementKey(item))))
-  const primaryKeys = new Set(primary.map((item) => statementKey(item)))
-  fallback.forEach((item) => {
-    if (primaryKeys.has(statementKey(item))) return
-    merged.push(item)
-  })
-  return sortPeriods(merged)
-}
+function parseTimeSeries(payload: unknown, timeframe: "annual" | "quarterly", specs: TimeSeriesFieldSpec[]) {
+  const prefix = timeframe === "annual" ? "annual" : "quarterly"
+  const periods = new Map<string, StatementPeriod>()
+  const result = rows(((payload as Record<string, unknown> | undefined)?.timeseries as Record<string, unknown> | undefined)?.result)
+  const specBySeries = new Map(specs.map((spec) => [`${prefix}${spec.key}`, spec]))
 
-function mergePeriod(primary: StatementPeriod, fallback?: StatementPeriod): StatementPeriod {
-  if (!fallback) return primary
-  const merged = {
-    ...primary,
-    sources: { ...primary.sources },
-  }
-  const fields: StatementField[] = [
-    "revenue",
-    "netIncome",
-    "grossProfit",
-    "operatingIncome",
-    "pretaxIncome",
-    "incomeTaxExpense",
-    "operatingCashFlow",
-    "capex",
-    "freeCashFlow",
-    "currentAssets",
-    "currentLiabilities",
-    "totalAssets",
-    "totalLiabilities",
-    "equity",
-    "cash",
-    "longTermDebt",
-    "currentDebt",
-    "totalDebt",
-    "retainedEarnings",
-    "sharesBasic",
-    "sharesDiluted",
-    "effectiveTaxRatePercent",
-  ]
-  fields.forEach((field) => {
-    if (merged[field] !== null) return
-    merged[field] = fallback[field]
-    if (fallback[field] !== null && fallback.sources[field]) {
-      merged.sources[field] = fallback.sources[field]
+  for (const item of result) {
+    const seriesName = Object.keys(item).find((key) => key !== "meta" && key !== "timestamp")
+    if (!seriesName) continue
+
+    const spec = specBySeries.get(seriesName)
+    if (!spec) continue
+
+    for (const point of rows(item[seriesName])) {
+      const endDate = dateOnly(point.asOfDate)
+      if (!endDate) continue
+
+      const period = periods.get(endDate) ?? createStatementPeriod(timeframe, endDate)
+      period[spec.field] = spec.parser(point.reportedValue)
+      periods.set(endDate, period)
     }
-  })
-  return merged
-}
-
-function fieldSources(periods: StatementPeriod[], fields: StatementField[]) {
-  const out: SourceKey[] = []
-  periods.forEach((period) => {
-    fields.forEach((field) => {
-      const key = period.sources[field]
-      if (!key || out.includes(key)) return
-      out.push(key)
-    })
-  })
-  return out
-}
-
-function latestValue<T>(values: (T | null | undefined)[]) {
-  for (const value of values) {
-    if (value !== null && value !== undefined) return value
   }
-  return null
-}
 
-function currentAnnualDebt(period: StatementPeriod | undefined) {
-  if (!period) return null
-  return latestValue([period.totalDebt, period.longTermDebt])
+  return sortPeriods([...periods.values()].map(finalizeStatementPeriod))
 }
+//#endregion
 
-function trailingFourSum(periods: StatementPeriod[], field: StatementField) {
-  const slice = periods.slice(0, 4)
-  if (slice.length < 4) return null
-  const values = slice.map((item) => item[field])
-  if (values.some((item) => item === null)) return null
-  return sumNullableNumbers(values)
-}
-
-function priorFourSum(periods: StatementPeriod[], field: StatementField) {
-  const slice = periods.slice(4, 8)
-  if (slice.length < 4) return null
-  const values = slice.map((item) => item[field])
-  if (values.some((item) => item === null)) return null
-  return sumNullableNumbers(values)
-}
-
-function revenueGrowthPercent(periods: StatementPeriod[]): DerivedResult {
-  const current = trailingFourSum(periods, "revenue")
-  const prior = priorFourSum(periods, "revenue")
-  if (current === null || prior === null || prior === 0) {
-    return { value: null, reason: "requires eight quarters of revenue history" }
+//#region Derived metrics
+function deriveMarketCap(input: {
+  directMarketCap: number | null
+  currentPrice: number | null
+  sharesOutstanding: number | null
+}): DerivedResult {
+  if (input.directMarketCap !== null) {
+    return { value: input.directMarketCap }
+  }
+  if (input.currentPrice === null || input.sharesOutstanding === null) {
+    return { value: null, reason: "requires Yahoo market cap or current price and shares outstanding" }
   }
   return {
-    value: ((current - prior) / prior) * 100,
-  }
-}
-
-function deriveMarketCap(currentPrice: number | null, sharesOutstanding: number | null): DerivedResult {
-  if (currentPrice === null || sharesOutstanding === null) {
-    return { value: null, reason: "requires current price and shares outstanding" }
-  }
-  return {
-    value: currentPrice * sharesOutstanding,
+    value: input.currentPrice * input.sharesOutstanding,
   }
 }
 
 function calculateDcfPerShare(input: DcfInput): DerivedResult {
   if (input.ttmFreeCashFlow === null || input.ttmFreeCashFlow <= 0) {
-    return { value: null, reason: "requires positive TTM free cash flow" }
+    return { value: null, reason: "requires positive Yahoo TTM free cash flow" }
   }
   if (input.revenueGrowthPercent === null) {
-    return { value: null, reason: "requires trailing four-quarter revenue growth" }
+    return { value: null, reason: "requires Yahoo revenue growth" }
   }
   if (input.cash === null || input.totalDebt === null) {
-    return { value: null, reason: "requires cash and total debt" }
+    return { value: null, reason: "requires annual cash and total debt" }
   }
   if (input.sharesOutstanding === null || input.sharesOutstanding <= 0) {
-    return { value: null, reason: "requires shares outstanding" }
+    return { value: null, reason: "requires Yahoo shares outstanding" }
   }
 
   const growth = Math.max(0, Math.min(DCF_GROWTH_CAP_PERCENT, input.revenueGrowthPercent)) / 100
   let cashFlow = input.ttmFreeCashFlow
   let presentValue = 0
+
   for (let year = 1; year <= DCF_YEARS; year++) {
     cashFlow *= 1 + growth
     presentValue += cashFlow / (1 + DCF_DISCOUNT_RATE) ** year
@@ -962,46 +569,39 @@ function calculateDcfPerShare(input: DcfInput): DerivedResult {
   const terminalValue = terminalCashFlow / (DCF_DISCOUNT_RATE - DCF_TERMINAL_GROWTH_RATE)
   const enterpriseValue = presentValue + terminalValue / (1 + DCF_DISCOUNT_RATE) ** DCF_YEARS
   const equityValue = enterpriseValue + input.cash - input.totalDebt
+
   return {
     value: equityValue / input.sharesOutstanding,
   }
 }
 
-function calculatePegy(input: {
-  trailingPe: number | null
-  epsGrowthPercent: number | null
-  dividendYieldPercent: number | null
+function calculateRatio(input: {
+  numerator: number | null
+  denominator: number | null
+  reason: string
 }): DerivedResult {
-  if (input.trailingPe === null || input.trailingPe <= 0) {
-    return { value: null, reason: "requires positive trailing P/E" }
-  }
-  if (input.epsGrowthPercent === null) {
-    return { value: null, reason: "requires Finnhub EPS growth" }
-  }
-  const denominator = input.epsGrowthPercent + (input.dividendYieldPercent ?? 0)
-  if (denominator <= 0) {
-    return { value: null, reason: "requires positive EPS growth plus dividend yield" }
+  if (input.numerator === null || input.denominator === null || input.denominator <= 0) {
+    return { value: null, reason: input.reason }
   }
   return {
-    value: input.trailingPe / denominator,
+    value: input.numerator / input.denominator,
   }
+}
+
+function calculatePriceMultiple(marketCap: number | null, baseValue: number | null, baseLabel: string): DerivedResult {
+  return calculateRatio({
+    numerator: marketCap,
+    denominator: baseValue,
+    reason: `requires market cap and positive ${baseLabel}`,
+  })
 }
 
 function calculateFcfYield(freeCashFlow: number | null, marketCap: number | null): DerivedResult {
-  if (freeCashFlow === null || marketCap === null || marketCap === 0) {
-    return { value: null, reason: "requires market cap and free cash flow" }
+  if (freeCashFlow === null || marketCap === null || marketCap <= 0) {
+    return { value: null, reason: "requires market cap and TTM free cash flow" }
   }
   return {
     value: (freeCashFlow / marketCap) * 100,
-  }
-}
-
-function calculatePriceToFcf(marketCap: number | null, freeCashFlow: number | null): DerivedResult {
-  if (marketCap === null || freeCashFlow === null || freeCashFlow === 0) {
-    return { value: null, reason: "requires market cap and non-zero free cash flow" }
-  }
-  return {
-    value: marketCap / freeCashFlow,
   }
 }
 
@@ -1011,20 +611,19 @@ function calculateRuleOf40(input: {
   ttmFreeCashFlow: number | null
 }): DerivedResult {
   if (input.revenueGrowthPercent === null) {
-    return { value: null, reason: "requires trailing four-quarter revenue growth" }
+    return { value: null, reason: "requires Yahoo revenue growth" }
   }
-  if (input.ttmRevenue === null || input.ttmRevenue === 0 || input.ttmFreeCashFlow === null) {
-    return { value: null, reason: "requires TTM revenue and TTM free cash flow" }
+  if (input.ttmRevenue === null || input.ttmRevenue <= 0 || input.ttmFreeCashFlow === null) {
+    return { value: null, reason: "requires Yahoo TTM revenue and free cash flow" }
   }
-  const margin = (input.ttmFreeCashFlow / input.ttmRevenue) * 100
   return {
-    value: input.revenueGrowthPercent + margin,
+    value: input.revenueGrowthPercent + (input.ttmFreeCashFlow / input.ttmRevenue) * 100,
   }
 }
 
 function calculateSustainableGrowthRate(roePercent: number | null, payoutRatioPercent: number | null): DerivedResult {
   if (roePercent === null || payoutRatioPercent === null) {
-    return { value: null, reason: "requires ROE and payout ratio" }
+    return { value: null, reason: "requires ROE and dividend payout ratio" }
   }
   return {
     value: roePercent * (1 - payoutRatioPercent / 100),
@@ -1033,7 +632,10 @@ function calculateSustainableGrowthRate(roePercent: number | null, payoutRatioPe
 
 function calculateRoic(input: RoicInput): DerivedResult {
   if (input.operatingIncome === null) {
-    return { value: null, reason: "requires operating income" }
+    return { value: null, reason: "requires annual operating income" }
+  }
+  if (input.effectiveTaxRatePercent === null) {
+    return { value: null, reason: "requires annual effective tax rate" }
   }
   if (
     input.currentDebt === null ||
@@ -1045,72 +647,93 @@ function calculateRoic(input: RoicInput): DerivedResult {
   ) {
     return { value: null, reason: "requires current and prior invested capital inputs" }
   }
-  const taxRate = (input.effectiveTaxRatePercent ?? FALLBACK_TAX_RATE) / 100
-  const nopat = input.operatingIncome * (1 - taxRate)
+
+  const nopat = input.operatingIncome * (1 - input.effectiveTaxRatePercent / 100)
   const currentInvestedCapital = input.currentDebt + input.currentEquity - input.currentCash
   const priorInvestedCapital = input.priorDebt + input.priorEquity - input.priorCash
   const averageInvestedCapital = (currentInvestedCapital + priorInvestedCapital) / 2
+
   if (!Number.isFinite(averageInvestedCapital) || averageInvestedCapital === 0) {
     return { value: null, reason: "average invested capital is zero or invalid" }
   }
+
   return {
     value: (nopat / averageInvestedCapital) * 100,
   }
 }
 
+function calculateRoe(input: {
+  ttmNetIncome: number | null
+  currentEquity: number | null
+  priorEquity: number | null
+}): DerivedResult {
+  if (input.ttmNetIncome === null) {
+    return { value: null, reason: "requires Yahoo TTM net income" }
+  }
+  if (input.currentEquity === null || input.priorEquity === null) {
+    return { value: null, reason: "requires current and prior annual equity" }
+  }
+
+  const averageEquity = (input.currentEquity + input.priorEquity) / 2
+  if (!Number.isFinite(averageEquity) || averageEquity <= 0) {
+    return { value: null, reason: "average equity is zero or invalid" }
+  }
+
+  return {
+    value: (input.ttmNetIncome / averageEquity) * 100,
+  }
+}
+
 function calculatePiotroskiFScore(input: PiotroskiInput): DerivedResult {
-  const required = [
-    input.currentNetIncome,
-    input.currentOperatingCashFlow,
-    input.currentTotalAssets,
-    input.currentLongTermDebt,
-    input.currentCurrentAssets,
-    input.currentCurrentLiabilities,
-    input.currentGrossProfit,
-    input.currentRevenue,
-    input.currentSharesDiluted,
-    input.priorNetIncome,
-    input.priorOperatingCashFlow,
-    input.priorTotalAssets,
-    input.priorLongTermDebt,
-    input.priorCurrentAssets,
-    input.priorCurrentLiabilities,
-    input.priorGrossProfit,
-    input.priorRevenue,
-    input.priorSharesDiluted,
-  ]
-  if (required.some((item) => item === null)) {
+  if (
+    input.currentNetIncome === null ||
+    input.currentOperatingCashFlow === null ||
+    input.currentTotalAssets === null ||
+    input.currentTotalDebt === null ||
+    input.currentCurrentAssets === null ||
+    input.currentCurrentLiabilities === null ||
+    input.currentGrossProfit === null ||
+    input.currentRevenue === null ||
+    input.currentSharesDiluted === null ||
+    input.priorNetIncome === null ||
+    input.priorOperatingCashFlow === null ||
+    input.priorTotalAssets === null ||
+    input.priorTotalDebt === null ||
+    input.priorCurrentAssets === null ||
+    input.priorCurrentLiabilities === null ||
+    input.priorGrossProfit === null ||
+    input.priorRevenue === null ||
+    input.priorSharesDiluted === null
+  ) {
     return { value: null, reason: "requires current and prior annual statement coverage" }
   }
 
-  const currentAssetsAverage = ((input.currentTotalAssets as number) + (input.priorTotalAssets as number)) / 2
-  const priorRoa = (input.priorNetIncome as number) / (input.priorTotalAssets as number)
-  const currentRoa = (input.currentNetIncome as number) / currentAssetsAverage
-  const accrual = (input.currentOperatingCashFlow as number) > (input.currentNetIncome as number)
-  const leverageImprovement =
-    (input.currentLongTermDebt as number) / (input.currentTotalAssets as number) <
-    (input.priorLongTermDebt as number) / (input.priorTotalAssets as number)
-  const currentRatioImprovement =
-    (input.currentCurrentAssets as number) / (input.currentCurrentLiabilities as number) >
-    (input.priorCurrentAssets as number) / (input.priorCurrentLiabilities as number)
-  const noDilution = (input.currentSharesDiluted as number) <= (input.priorSharesDiluted as number)
-  const grossMarginImprovement =
-    (input.currentGrossProfit as number) / (input.currentRevenue as number) >
-    (input.priorGrossProfit as number) / (input.priorRevenue as number)
-  const assetTurnoverImprovement =
-    (input.currentRevenue as number) / currentAssetsAverage >
-    (input.priorRevenue as number) / (input.priorTotalAssets as number)
+  const averageAssets = (input.currentTotalAssets + input.priorTotalAssets) / 2
+  if (!Number.isFinite(averageAssets) || averageAssets <= 0) {
+    return { value: null, reason: "average assets is zero or invalid" }
+  }
+
+  const currentRoa = input.currentNetIncome / averageAssets
+  const priorRoa = input.priorNetIncome / input.priorTotalAssets
+  const currentDebtRatio = input.currentTotalDebt / input.currentTotalAssets
+  const priorDebtRatio = input.priorTotalDebt / input.priorTotalAssets
+  const currentRatio = input.currentCurrentAssets / input.currentCurrentLiabilities
+  const priorRatio = input.priorCurrentAssets / input.priorCurrentLiabilities
+  const currentGrossMargin = input.currentGrossProfit / input.currentRevenue
+  const priorGrossMargin = input.priorGrossProfit / input.priorRevenue
+  const currentAssetTurnover = input.currentRevenue / averageAssets
+  const priorAssetTurnover = input.priorRevenue / input.priorTotalAssets
 
   const score = [
     currentRoa > 0,
-    (input.currentOperatingCashFlow as number) > 0,
+    input.currentOperatingCashFlow > 0,
     currentRoa > priorRoa,
-    accrual,
-    leverageImprovement,
-    currentRatioImprovement,
-    noDilution,
-    grossMarginImprovement,
-    assetTurnoverImprovement,
+    input.currentOperatingCashFlow > input.currentNetIncome,
+    currentDebtRatio < priorDebtRatio,
+    currentRatio > priorRatio,
+    input.currentSharesDiluted <= input.priorSharesDiluted,
+    currentGrossMargin > priorGrossMargin,
+    currentAssetTurnover > priorAssetTurnover,
   ].filter(Boolean).length
 
   return {
@@ -1127,26 +750,27 @@ function calculateAltmanZScore(input: AltmanInput): DerivedResult {
     input.totalAssets === null ||
     input.totalLiabilities === null
   ) {
-    return { value: null, reason: "requires working capital, retained earnings, EBIT, assets, liabilities, and equity" }
+    return { value: null, reason: "requires working capital, retained earnings, EBIT, equity, assets, and liabilities" }
   }
   if (input.totalAssets <= 0 || input.totalLiabilities <= 0) {
     return { value: null, reason: "requires positive total assets and total liabilities" }
   }
-  const score =
-    6.56 * (input.workingCapital / input.totalAssets) +
-    3.26 * (input.retainedEarnings / input.totalAssets) +
-    6.72 * (input.ebit / input.totalAssets) +
-    1.05 * (input.equity / input.totalLiabilities)
+
   return {
-    value: score,
+    value:
+      6.56 * (input.workingCapital / input.totalAssets) +
+      3.26 * (input.retainedEarnings / input.totalAssets) +
+      6.72 * (input.ebit / input.totalAssets) +
+      1.05 * (input.equity / input.totalLiabilities),
   }
 }
 
 function sourceSummary(sourceMap: Map<SourceKey, SourceMeta>, keys: SourceKey[]) {
   const items = Array.from(new Set(keys)).flatMap((key) => {
-    const meta = sourceMap.get(key)
-    return meta ? [meta] : []
+    const source = sourceMap.get(key)
+    return source ? [source] : []
   })
+
   if (!items.length) {
     return {
       source: "unknown",
@@ -1154,19 +778,15 @@ function sourceSummary(sourceMap: Map<SourceKey, SourceMeta>, keys: SourceKey[])
       retrieved_at: "unknown",
     }
   }
-  return {
-    source: items.map((item) => item.label).join(" + "),
-    source_url: items.map((item) => item.url).join(" | "),
-    retrieved_at: items.map((item) => item.retrievedAt).sort((left, right) => (left > right ? -1 : 1))[0] ?? "unknown",
-  }
-}
 
-function firstAvailable(candidates: Array<{ value: number | null; key: SourceKey }>) {
-  for (const candidate of candidates) {
-    if (candidate.value === null) continue
-    return candidate
+  return {
+    source: YAHOO_LABEL,
+    source_url: Array.from(new Set(items.map((item) => item.url))).join(" | "),
+    retrieved_at: items
+      .map((item) => item.retrievedAt)
+      .filter((item) => item.length > 0)
+      .sort((left, right) => (left > right ? -1 : 1))[0] ?? "unknown",
   }
-  return
 }
 
 function metricRecord(input: {
@@ -1211,6 +831,8 @@ function normalizeUnknowns(values: string[]) {
   })
 }
 
+// TODO: PEGY needs a Yahoo-native EPS growth policy before reintroduction.
+
 export async function buildReportEvaluationSnapshot(input: {
   ticker: string
   signal?: AbortSignal
@@ -1218,254 +840,109 @@ export async function buildReportEvaluationSnapshot(input: {
   const ticker = normalizeTicker(input.ticker)
   if (!ticker) throw new Error("ticker must include at least one valid symbol character")
 
-  const [finnhubKey, polygonKey] = await Promise.all([credential("finnhub"), credential("polygon")])
-  const sourceMap = new Map<SourceKey, SourceMeta>()
-  const errors: string[] = []
+  const summaryUrl = quoteSummaryUrl(ticker)
+  const annualUrl = timeSeriesUrl(ticker, "annual", ANNUAL_TIMESERIES_KEYS)
+  const quarterlyUrl = timeSeriesUrl(ticker, "quarterly", QUARTERLY_TIMESERIES_KEYS)
 
-  const yahooModules = encodeURIComponent("financialData,defaultKeyStatistics,summaryDetail,price")
-  const yahooUrl = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${yahooModules}`
   const requests = await Promise.all([
-    fetchJson<Record<string, unknown>>({
-      key: "yahoo_summary",
-      label: "Yahoo Finance",
-      url: yahooUrl,
-      signal: input.signal,
-    }),
-    finnhubKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "finnhub_quote",
-          label: "Finnhub",
-          url: `${FINNHUB_BASE}/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(finnhubKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch("finnhub_quote", "Finnhub", `${FINNHUB_BASE}/quote?symbol=${encodeURIComponent(ticker)}`, "missing credential"),
-        ),
-    finnhubKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "finnhub_metric",
-          label: "Finnhub",
-          url: `${FINNHUB_BASE}/stock/metric?symbol=${encodeURIComponent(ticker)}&metric=all&token=${encodeURIComponent(finnhubKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "finnhub_metric",
-            "Finnhub",
-            `${FINNHUB_BASE}/stock/metric?symbol=${encodeURIComponent(ticker)}&metric=all`,
-            "missing credential",
-          ),
-        ),
-    finnhubKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "finnhub_price_target",
-          label: "Finnhub",
-          url: `${FINNHUB_BASE}/stock/price-target?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(finnhubKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "finnhub_price_target",
-            "Finnhub",
-            `${FINNHUB_BASE}/stock/price-target?symbol=${encodeURIComponent(ticker)}`,
-            "missing credential",
-          ),
-        ),
-    polygonKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "polygon_annual",
-          label: "Polygon",
-          url: `${POLYGON_BASE}/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=annual&limit=2&apiKey=${encodeURIComponent(polygonKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "polygon_annual",
-            "Polygon",
-            `${POLYGON_BASE}/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=annual&limit=2`,
-            "missing credential",
-          ),
-        ),
-    polygonKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "polygon_quarterly",
-          label: "Polygon",
-          url: `${POLYGON_BASE}/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=quarterly&limit=8&apiKey=${encodeURIComponent(polygonKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "polygon_quarterly",
-            "Polygon",
-            `${POLYGON_BASE}/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=quarterly&limit=8`,
-            "missing credential",
-          ),
-        ),
-    finnhubKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "finnhub_annual",
-          label: "Finnhub",
-          url: `${FINNHUB_BASE}/stock/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=annual&token=${encodeURIComponent(finnhubKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "finnhub_annual",
-            "Finnhub",
-            `${FINNHUB_BASE}/stock/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=annual`,
-            "missing credential",
-          ),
-        ),
-    finnhubKey
-      ? fetchJson<Record<string, unknown>>({
-          key: "finnhub_quarterly",
-          label: "Finnhub",
-          url: `${FINNHUB_BASE}/stock/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=quarterly&token=${encodeURIComponent(finnhubKey)}`,
-          signal: input.signal,
-        })
-      : Promise.resolve(
-          emptyFetch(
-            "finnhub_quarterly",
-            "Finnhub",
-            `${FINNHUB_BASE}/stock/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=quarterly`,
-            "missing credential",
-          ),
-        ),
+    fetchJson<Record<string, unknown>>({ key: "summary", url: summaryUrl, signal: input.signal }),
+    fetchJson<Record<string, unknown>>({ key: "annual", url: annualUrl, signal: input.signal }),
+    fetchJson<Record<string, unknown>>({ key: "quarterly", url: quarterlyUrl, signal: input.signal }),
   ])
 
-  requests.forEach((item) => {
-    sourceMap.set(item.meta.key, item.meta)
-    if (item.error) {
-      errors.push(`${item.meta.label} (${item.meta.key}): ${item.error}`)
+  const sourceMap = new Map<SourceKey, SourceMeta>()
+  const unknowns: string[] = []
+
+  for (const request of requests) {
+    sourceMap.set(request.meta.key, request.meta)
+    if (request.error) {
+      unknowns.push(`${request.meta.label} (${request.meta.key}): ${request.error}`)
     }
-  })
+  }
 
-  const [yahooRaw, finnhubQuoteRaw, finnhubMetricRaw, finnhubTargetRaw, polygonAnnualRaw, polygonQuarterlyRaw, finnhubAnnualRaw, finnhubQuarterlyRaw] =
-    requests
+  const [summaryRaw, annualRaw, quarterlyRaw] = requests
 
-  const yahoo = yahooRaw.data ? parseYahooSummary(yahooRaw.data) : parseYahooSummary({})
-  const finnhubQuote = finnhubQuoteRaw.data ? parseFinnhubQuote(finnhubQuoteRaw.data) : parseFinnhubQuote({})
-  const finnhubMetric = finnhubMetricRaw.data ? parseFinnhubMetric(finnhubMetricRaw.data) : parseFinnhubMetric({})
-  const finnhubTarget = finnhubTargetRaw.data ? parseFinnhubPriceTarget(finnhubTargetRaw.data) : parseFinnhubPriceTarget({})
+  if (summaryRaw.data) {
+    const error = quoteSummaryError(summaryRaw.data)
+    if (error) unknowns.push(`${YAHOO_LABEL} (summary): ${error}`)
+  }
 
-  const polygonAnnual = rows(polygonAnnualRaw.data?.results).map((item) => parsePolygonStatement(item, "annual", "polygon_annual"))
-  const polygonQuarterly = rows(polygonQuarterlyRaw.data?.results).map((item) =>
-    parsePolygonStatement(item, "quarterly", "polygon_quarterly"),
-  )
-  const finnhubAnnual = rows(finnhubAnnualRaw.data?.data).map((item) => parseFinnhubStatement(item, "annual", "finnhub_annual"))
-  const finnhubQuarterly = rows(finnhubQuarterlyRaw.data?.data).map((item) =>
-    parseFinnhubStatement(item, "quarterly", "finnhub_quarterly"),
-  )
-
-  const annual = mergePeriods(sortPeriods(polygonAnnual), sortPeriods(finnhubAnnual))
-  const quarterly = mergePeriods(sortPeriods(polygonQuarterly), sortPeriods(finnhubQuarterly))
+  const summary = parseYahooSummary(summaryRaw.data)
+  const annual = parseTimeSeries(annualRaw.data, "annual", ANNUAL_FIELD_SPECS)
+  const quarterly = parseTimeSeries(quarterlyRaw.data, "quarterly", QUARTERLY_FIELD_SPECS)
 
   const currentAnnual = annual[0]
   const priorAnnual = annual[1]
-  const latestQuarterly = quarterly.slice(0, 4)
-  const quarterlyAscending = [...latestQuarterly].reverse()
-
-  const revenueGrowth = revenueGrowthPercent(quarterly)
-  const ttmRevenue = latestValue([
-    yahoo.revenueTtm,
-    finnhubMetric.revenueTtm,
-    trailingFourSum(quarterly, "revenue"),
-  ])
-  const ttmNetIncome = latestValue([
-    yahoo.netIncomeTtm,
-    finnhubMetric.netIncomeTtm,
-    trailingFourSum(quarterly, "netIncome"),
-  ])
-  const ttmFreeCashFlow = latestValue([
-    yahoo.freeCashFlowTtm,
-    finnhubMetric.freeCashFlowTtm,
-    trailingFourSum(quarterly, "freeCashFlow"),
-  ])
-  const ttmGrossProfit = trailingFourSum(quarterly, "grossProfit")
-  const currentPriceObserved = firstAvailable([
-    { value: yahoo.currentPrice, key: "yahoo_summary" as const },
-    { value: finnhubQuote.currentPrice, key: "finnhub_quote" as const },
-  ])
-  const currentPrice = currentPriceObserved?.value ?? null
-  const sharesObserved = firstAvailable([
-    { value: yahoo.sharesOutstanding, key: "yahoo_summary" as const },
-    { value: finnhubMetric.sharesOutstanding, key: "finnhub_metric" as const },
-    { value: currentAnnual?.sharesDiluted ?? null, key: currentAnnual?.sources.sharesDiluted ?? "polygon_annual" },
-  ])
-  const marketCapDirect = firstAvailable([{ value: yahoo.marketCap, key: "yahoo_summary" as const }])
-  const marketCapDerived = deriveMarketCap(currentPrice, sharesObserved?.value ?? null)
-  const marketCap = marketCapDirect?.value ?? marketCapDerived.value
-  const marketCapKeys = marketCapDirect ? [marketCapDirect.key] : sourceKeysFromMaybe([currentPriceObserved?.key, sharesObserved?.key])
+  const marketCap = deriveMarketCap({
+    directMarketCap: summary.marketCap,
+    currentPrice: summary.currentPrice,
+    sharesOutstanding: summary.sharesOutstanding,
+  })
 
   const dcf = calculateDcfPerShare({
-    ttmFreeCashFlow,
-    revenueGrowthPercent: revenueGrowth.value,
+    ttmFreeCashFlow: summary.freeCashFlowTtm,
+    revenueGrowthPercent: summary.revenueGrowthPercent,
     cash: currentAnnual?.cash ?? null,
-    totalDebt: currentAnnualDebt(currentAnnual),
-    sharesOutstanding: sharesObserved?.value ?? null,
+    totalDebt: currentAnnual?.totalDebt ?? null,
+    sharesOutstanding: summary.sharesOutstanding,
   })
-  const priceTarget = firstAvailable([
-    { value: finnhubTarget.targetMedian, key: "finnhub_price_target" as const },
-    { value: yahoo.analystPriceTargetMedian, key: "yahoo_summary" as const },
-  ])
-  const trailingPeDirect = firstAvailable([
-    { value: yahoo.trailingPe, key: "yahoo_summary" as const },
-    { value: finnhubMetric.trailingPe, key: "finnhub_metric" as const },
-  ])
-  const trailingPeDerived =
-    !trailingPeDirect && marketCap !== null && ttmNetIncome !== null && ttmNetIncome > 0
-      ? { value: marketCap / ttmNetIncome, key: "polygon_quarterly" as const }
-      : undefined
-  const trailingPe = trailingPeDirect?.value ?? trailingPeDerived?.value ?? null
-  const trailingPeKeys = trailingPeDirect ? [trailingPeDirect.key] : sourceKeysFromMaybe([...marketCapKeys, ...fieldSources(quarterly.slice(0, 4), ["netIncome"])])
-
-  const pegy = calculatePegy({
-    trailingPe,
-    epsGrowthPercent: finnhubMetric.epsGrowthPercent,
-    dividendYieldPercent: yahoo.dividendYieldPercent ?? finnhubMetric.dividendYieldPercent,
+  const priceToEarnings = calculatePriceMultiple(marketCap.value, summary.netIncomeTtm, "TTM net income")
+  const priceToSales = calculatePriceMultiple(marketCap.value, summary.revenueTtm, "TTM revenue")
+  const priceToBook = calculatePriceMultiple(marketCap.value, currentAnnual?.equity ?? null, "annual equity")
+  const fcfYield = calculateFcfYield(summary.freeCashFlowTtm, marketCap.value)
+  const priceToFcf = calculatePriceMultiple(marketCap.value, summary.freeCashFlowTtm, "TTM free cash flow")
+  const roic = currentAnnual && priorAnnual
+    ? calculateRoic({
+        operatingIncome: currentAnnual.operatingIncome,
+        effectiveTaxRatePercent: currentAnnual.effectiveTaxRatePercent,
+        currentDebt: currentAnnual.totalDebt,
+        currentEquity: currentAnnual.equity,
+        currentCash: currentAnnual.cash,
+        priorDebt: priorAnnual.totalDebt,
+        priorEquity: priorAnnual.equity,
+        priorCash: priorAnnual.cash,
+      })
+    : { value: null, reason: "requires current and prior annual statement periods" }
+  const roe = currentAnnual && priorAnnual
+    ? calculateRoe({
+        ttmNetIncome: summary.netIncomeTtm,
+        currentEquity: currentAnnual.equity,
+        priorEquity: priorAnnual.equity,
+      })
+    : { value: null, reason: "requires current and prior annual statement periods" }
+  const debtToEquity = calculateRatio({
+    numerator: currentAnnual?.totalDebt ?? null,
+    denominator: currentAnnual?.equity ?? null,
+    reason: "requires annual total debt and positive annual equity",
   })
-  const priceToSalesDirect = firstAvailable([
-    { value: yahoo.priceToSales, key: "yahoo_summary" as const },
-    { value: finnhubMetric.priceToSales, key: "finnhub_metric" as const },
-  ])
-  const priceToSalesDerived =
-    !priceToSalesDirect && marketCap !== null && ttmRevenue !== null && ttmRevenue > 0 ? marketCap / ttmRevenue : null
-  const priceToSales = priceToSalesDirect?.value ?? priceToSalesDerived
-  const priceToBookDirect = firstAvailable([
-    { value: yahoo.priceToBook, key: "yahoo_summary" as const },
-    { value: finnhubMetric.priceToBook, key: "finnhub_metric" as const },
-  ])
-  const priceToBookDerived =
-    !priceToBookDirect && marketCap !== null && currentAnnual?.equity !== null && currentAnnual.equity > 0
-      ? marketCap / currentAnnual.equity
-      : null
-  const priceToBook = priceToBookDirect?.value ?? priceToBookDerived
-  const dividendYield = latestValue([yahoo.dividendYieldPercent, finnhubMetric.dividendYieldPercent])
-  const payoutRatio = latestValue([yahoo.payoutRatioPercent, finnhubMetric.payoutRatioPercent])
-  const fcfYield = calculateFcfYield(ttmFreeCashFlow, marketCap)
-  const priceToFcf = calculatePriceToFcf(marketCap, ttmFreeCashFlow)
+  const ruleOf40 = calculateRuleOf40({
+    revenueGrowthPercent: summary.revenueGrowthPercent,
+    ttmRevenue: summary.revenueTtm,
+    ttmFreeCashFlow: summary.freeCashFlowTtm,
+  })
+  const sustainableGrowth = calculateSustainableGrowthRate(roe.value, summary.payoutRatioPercent)
   const piotroski = currentAnnual && priorAnnual
     ? calculatePiotroskiFScore({
         currentNetIncome: currentAnnual.netIncome,
         currentOperatingCashFlow: currentAnnual.operatingCashFlow,
         currentTotalAssets: currentAnnual.totalAssets,
-        currentLongTermDebt: currentAnnualDebt(currentAnnual),
+        currentTotalDebt: currentAnnual.totalDebt,
         currentCurrentAssets: currentAnnual.currentAssets,
         currentCurrentLiabilities: currentAnnual.currentLiabilities,
         currentGrossProfit: currentAnnual.grossProfit,
         currentRevenue: currentAnnual.revenue,
-        currentSharesDiluted: latestValue([currentAnnual.sharesDiluted, currentAnnual.sharesBasic]),
+        currentSharesDiluted: currentAnnual.sharesDiluted,
         priorNetIncome: priorAnnual.netIncome,
         priorOperatingCashFlow: priorAnnual.operatingCashFlow,
         priorTotalAssets: priorAnnual.totalAssets,
-        priorLongTermDebt: currentAnnualDebt(priorAnnual),
+        priorTotalDebt: priorAnnual.totalDebt,
         priorCurrentAssets: priorAnnual.currentAssets,
         priorCurrentLiabilities: priorAnnual.currentLiabilities,
         priorGrossProfit: priorAnnual.grossProfit,
         priorRevenue: priorAnnual.revenue,
-        priorSharesDiluted: latestValue([priorAnnual.sharesDiluted, priorAnnual.sharesBasic]),
+        priorSharesDiluted: priorAnnual.sharesDiluted,
       })
-    : { value: null, reason: "requires two annual statement periods" }
+    : { value: null, reason: "requires current and prior annual statement periods" }
   const altman = currentAnnual
     ? calculateAltmanZScore({
         workingCapital:
@@ -1479,53 +956,6 @@ export async function buildReportEvaluationSnapshot(input: {
         totalLiabilities: currentAnnual.totalLiabilities,
       })
     : { value: null, reason: "requires current annual statement period" }
-  const roic = currentAnnual && priorAnnual
-    ? calculateRoic({
-        operatingIncome: currentAnnual.operatingIncome,
-        effectiveTaxRatePercent: currentAnnual.effectiveTaxRatePercent,
-        currentDebt: currentAnnualDebt(currentAnnual),
-        currentEquity: currentAnnual.equity,
-        currentCash: currentAnnual.cash,
-        priorDebt: currentAnnualDebt(priorAnnual),
-        priorEquity: priorAnnual.equity,
-        priorCash: priorAnnual.cash,
-      })
-    : { value: null, reason: "requires current and prior annual statement periods" }
-  const roeDirect = firstAvailable([
-    { value: yahoo.roePercent, key: "yahoo_summary" as const },
-    { value: finnhubMetric.roePercent, key: "finnhub_metric" as const },
-  ])
-  const roeDerived =
-    !roeDirect && ttmNetIncome !== null && currentAnnual?.equity !== null && priorAnnual?.equity !== null
-      ? (ttmNetIncome / ((currentAnnual.equity + priorAnnual.equity) / 2)) * 100
-      : null
-  const roe = roeDirect?.value ?? roeDerived
-  const debtToEquityDirect = firstAvailable([
-    { value: yahoo.debtToEquity, key: "yahoo_summary" as const },
-    { value: finnhubMetric.debtToEquity, key: "finnhub_metric" as const },
-  ])
-  const debtToEquityDerived =
-    !debtToEquityDirect && currentAnnual?.equity !== null && currentAnnual.equity !== 0 && currentAnnualDebt(currentAnnual) !== null
-      ? (currentAnnualDebt(currentAnnual) as number) / currentAnnual.equity
-      : null
-  const debtToEquity = debtToEquityDirect?.value ?? debtToEquityDerived
-  const ruleOf40 = calculateRuleOf40({
-    revenueGrowthPercent: revenueGrowth.value,
-    ttmRevenue,
-    ttmFreeCashFlow,
-  })
-  const grossMarginDirect = firstAvailable([
-    { value: yahoo.grossMarginPercent, key: "yahoo_summary" as const },
-    { value: finnhubMetric.grossMarginPercent, key: "finnhub_metric" as const },
-  ])
-  const grossMarginDerived = !grossMarginDirect && ttmGrossProfit !== null && ttmRevenue !== null && ttmRevenue !== 0
-    ? (ttmGrossProfit / ttmRevenue) * 100
-    : null
-  const grossMargin = grossMarginDirect?.value ?? grossMarginDerived
-  const sustainableGrowth = calculateSustainableGrowthRate(roe, payoutRatio)
-  const beta = latestValue([yahoo.beta, finnhubMetric.beta])
-
-  const unknowns = [...errors]
 
   const fairness: EvaluationMetric[] = [
     metricRecord({
@@ -1535,13 +965,9 @@ export async function buildReportEvaluationSnapshot(input: {
       value: dcf.value,
       basis: "modeled",
       format: moneyPerShare,
-      sourceKeys: sourceKeysFromMaybe([
-        ...fieldSources(quarterly.slice(0, 8), ["revenue", "freeCashFlow"]),
-        ...fieldSources(annual.slice(0, 1), ["cash", "totalDebt"]),
-        sharesObserved?.key,
-      ]),
+      sourceKeys: ["summary", "annual"],
       sourceMap,
-      formula: "TTM FCF grown for 5 years using clamped trailing 4Q revenue growth; discounted at 10%; terminal growth 2.5%",
+      formula: "TTM free cash flow grown for 5 years using Yahoo revenue growth; discounted at 10%; terminal growth 2.5%",
       notes: [
         `Growth rate is clamped to 0%..${DCF_GROWTH_CAP_PERCENT}%`,
         `Discount rate ${trimNumber(DCF_DISCOUNT_RATE * 100)}%, terminal growth ${trimNumber(DCF_TERMINAL_GROWTH_RATE * 100)}%`,
@@ -1552,69 +978,48 @@ export async function buildReportEvaluationSnapshot(input: {
       key: "price_target_median",
       label: "Price Target Median",
       category: "fairness",
-      value: priceTarget?.value ?? null,
+      value: summary.analystPriceTargetMedian,
       basis: "reported",
       format: moneyPerShare,
-      sourceKeys: sourceKeysFromMaybe([priceTarget?.key]),
+      sourceKeys: ["summary"],
       sourceMap,
-      notes: ["Observed analyst consensus target median"],
-    }),
-    metricRecord({
-      key: "pegy",
-      label: "PEGY Ratio",
-      category: "fairness",
-      value: pegy.value,
-      basis: "derived",
-      format: decimalText,
-      sourceKeys: sourceKeysFromMaybe([...trailingPeKeys, "finnhub_metric", "yahoo_summary"]),
-      sourceMap,
-      formula: "trailing_pe / (eps_growth_percent + dividend_yield_percent)",
-      notes: pegy.reason ? [pegy.reason] : undefined,
+      notes: summary.analystPriceTargetMedian === null ? ["requires Yahoo analyst price target data"] : undefined,
     }),
     metricRecord({
       key: "price_to_earnings",
       label: "Price-to-Earnings",
       category: "fairness",
-      value: trailingPe,
-      basis: trailingPeDirect ? "reported" : "derived",
+      value: priceToEarnings.value,
+      basis: "derived",
       format: ratioText,
-      sourceKeys: trailingPeDirect ? [trailingPeDirect.key] : trailingPeKeys,
+      sourceKeys: ["summary"],
       sourceMap,
-      formula: trailingPeDirect ? undefined : "market_cap / ttm_net_income",
-      notes:
-        !trailingPeDirect && trailingPe === null
-          ? ["requires observed P/E or positive TTM net income and market cap"]
-          : undefined,
+      formula: "market_cap / ttm_net_income",
+      notes: priceToEarnings.reason ? [priceToEarnings.reason] : undefined,
     }),
     metricRecord({
       key: "price_to_sales",
       label: "Price-to-Sales",
       category: "fairness",
-      value: priceToSales,
-      basis: priceToSalesDirect ? "reported" : "derived",
+      value: priceToSales.value,
+      basis: "derived",
       format: ratioText,
-      sourceKeys: priceToSalesDirect ? [priceToSalesDirect.key] : sourceKeysFromMaybe([...marketCapKeys, ...fieldSources(quarterly.slice(0, 4), ["revenue"])]),
+      sourceKeys: ["summary"],
       sourceMap,
-      formula: priceToSalesDirect ? undefined : "market_cap / ttm_revenue",
-      notes:
-        !priceToSalesDirect && priceToSales === null
-          ? ["requires observed P/S or positive TTM revenue and market cap"]
-          : undefined,
+      formula: "market_cap / ttm_revenue",
+      notes: priceToSales.reason ? [priceToSales.reason] : undefined,
     }),
     metricRecord({
       key: "price_to_book",
       label: "Price-to-Book",
       category: "fairness",
-      value: priceToBook,
-      basis: priceToBookDirect ? "reported" : "derived",
+      value: priceToBook.value,
+      basis: "derived",
       format: ratioText,
-      sourceKeys: priceToBookDirect ? [priceToBookDirect.key] : sourceKeysFromMaybe([...marketCapKeys, ...fieldSources(annual.slice(0, 1), ["equity"])]),
+      sourceKeys: ["summary", "annual"],
       sourceMap,
-      formula: priceToBookDirect ? undefined : "market_cap / latest_equity",
-      notes:
-        !priceToBookDirect && priceToBook === null
-          ? ["requires observed P/B or positive equity and market cap"]
-          : undefined,
+      formula: "market_cap / annual_equity",
+      notes: priceToBook.reason ? [priceToBook.reason] : undefined,
     }),
     metricRecord({
       key: "fcf_yield",
@@ -1623,7 +1028,7 @@ export async function buildReportEvaluationSnapshot(input: {
       value: fcfYield.value,
       basis: "derived",
       format: percentText,
-      sourceKeys: sourceKeysFromMaybe([...marketCapKeys, ...fieldSources(quarterly.slice(0, 4), ["freeCashFlow"])]),
+      sourceKeys: ["summary"],
       sourceMap,
       formula: "ttm_free_cash_flow / market_cap",
       notes: fcfYield.reason ? [fcfYield.reason] : undefined,
@@ -1635,7 +1040,7 @@ export async function buildReportEvaluationSnapshot(input: {
       value: priceToFcf.value,
       basis: "derived",
       format: ratioText,
-      sourceKeys: sourceKeysFromMaybe([...marketCapKeys, ...fieldSources(quarterly.slice(0, 4), ["freeCashFlow"])]),
+      sourceKeys: ["summary"],
       sourceMap,
       formula: "market_cap / ttm_free_cash_flow",
       notes: priceToFcf.reason ? [priceToFcf.reason] : undefined,
@@ -1647,19 +1052,7 @@ export async function buildReportEvaluationSnapshot(input: {
       value: piotroski.value,
       basis: "derived",
       format: scoreText,
-      sourceKeys: fieldSources(annual.slice(0, 2), [
-        "netIncome",
-        "operatingCashFlow",
-        "totalAssets",
-        "longTermDebt",
-        "totalDebt",
-        "currentAssets",
-        "currentLiabilities",
-        "grossProfit",
-        "revenue",
-        "sharesDiluted",
-        "sharesBasic",
-      ]),
+      sourceKeys: ["annual"],
       sourceMap,
       formula: "Standard 9-point annual Piotroski F-score",
       notes: piotroski.reason ? [piotroski.reason] : undefined,
@@ -1671,15 +1064,7 @@ export async function buildReportEvaluationSnapshot(input: {
       value: altman.value,
       basis: "derived",
       format: decimalText,
-      sourceKeys: fieldSources(annual.slice(0, 1), [
-        "currentAssets",
-        "currentLiabilities",
-        "retainedEarnings",
-        "operatingIncome",
-        "equity",
-        "totalAssets",
-        "totalLiabilities",
-      ]),
+      sourceKeys: ["annual"],
       sourceMap,
       formula: "Altman Z'' = 6.56*(WC/TA) + 3.26*(RE/TA) + 6.72*(EBIT/TA) + 1.05*(Equity/TL)",
       notes: ["Uses the non-manufacturing Z'' variant", ...(altman.reason ? [altman.reason] : [])],
@@ -1694,37 +1079,34 @@ export async function buildReportEvaluationSnapshot(input: {
       value: roic.value,
       basis: "derived",
       format: percentText,
-      sourceKeys: fieldSources(annual.slice(0, 2), ["operatingIncome", "effectiveTaxRatePercent", "totalDebt", "longTermDebt", "equity", "cash"]),
+      sourceKeys: ["annual"],
       sourceMap,
       formula: "NOPAT / average invested capital",
-      notes: [
-        `Fallback tax rate ${trimNumber(FALLBACK_TAX_RATE)}% when observed effective tax rate is unavailable`,
-        ...(roic.reason ? [roic.reason] : []),
-      ],
+      notes: roic.reason ? [roic.reason] : undefined,
     }),
     metricRecord({
       key: "roe",
       label: "Return on Equity",
       category: "quality",
-      value: roe,
-      basis: roeDirect ? "reported" : "derived",
+      value: roe.value,
+      basis: "derived",
       format: percentText,
-      sourceKeys: roeDirect ? [roeDirect.key] : sourceKeysFromMaybe([...fieldSources(annual.slice(0, 2), ["equity"]), ...fieldSources(quarterly.slice(0, 4), ["netIncome"])]),
+      sourceKeys: ["summary", "annual"],
       sourceMap,
-      formula: roeDirect ? undefined : "ttm_net_income / average_equity",
-      notes: !roeDirect && roe === null ? ["requires observed ROE or TTM net income plus average equity"] : undefined,
+      formula: "ttm_net_income / average_equity",
+      notes: roe.reason ? [roe.reason] : undefined,
     }),
     metricRecord({
       key: "debt_to_equity",
       label: "Debt to Equity",
       category: "quality",
-      value: debtToEquity,
-      basis: debtToEquityDirect ? "reported" : "derived",
+      value: debtToEquity.value,
+      basis: "derived",
       format: ratioText,
-      sourceKeys: debtToEquityDirect ? [debtToEquityDirect.key] : fieldSources(annual.slice(0, 1), ["totalDebt", "longTermDebt", "equity"]),
+      sourceKeys: ["annual"],
       sourceMap,
-      formula: debtToEquityDirect ? undefined : "latest_total_debt / latest_equity",
-      notes: !debtToEquityDirect && debtToEquity === null ? ["requires observed debt-to-equity or latest debt and equity"] : undefined,
+      formula: "annual_total_debt / annual_equity",
+      notes: debtToEquity.reason ? [debtToEquity.reason] : undefined,
     }),
     metricRecord({
       key: "rule_of_40",
@@ -1733,22 +1115,21 @@ export async function buildReportEvaluationSnapshot(input: {
       value: ruleOf40.value,
       basis: "derived",
       format: percentText,
-      sourceKeys: sourceKeysFromMaybe([...fieldSources(quarterly.slice(0, 8), ["revenue", "freeCashFlow"])]),
+      sourceKeys: ["summary"],
       sourceMap,
-      formula: "trailing_4q_revenue_growth_percent + ttm_free_cash_flow_margin_percent",
+      formula: "yahoo_revenue_growth_percent + (ttm_free_cash_flow / ttm_revenue)",
       notes: ruleOf40.reason ? [ruleOf40.reason] : undefined,
     }),
     metricRecord({
       key: "gross_profit_margin_ttm",
       label: "Gross Profit Margin TTM",
       category: "quality",
-      value: grossMargin,
-      basis: grossMarginDirect ? "reported" : "derived",
+      value: summary.grossMarginPercent,
+      basis: "reported",
       format: percentText,
-      sourceKeys: grossMarginDirect ? [grossMarginDirect.key] : fieldSources(quarterly.slice(0, 4), ["grossProfit", "revenue"]),
+      sourceKeys: ["summary"],
       sourceMap,
-      formula: grossMarginDirect ? undefined : "ttm_gross_profit / ttm_revenue",
-      notes: !grossMarginDirect && grossMargin === null ? ["requires observed margin or TTM gross profit and revenue"] : undefined,
+      notes: summary.grossMarginPercent === null ? ["requires Yahoo gross margin data"] : undefined,
     }),
     metricRecord({
       key: "sustainable_growth_rate_ttm",
@@ -1757,11 +1138,7 @@ export async function buildReportEvaluationSnapshot(input: {
       value: sustainableGrowth.value,
       basis: "derived",
       format: percentText,
-      sourceKeys: sourceKeysFromMaybe([
-        ...(roeDirect ? [roeDirect.key] : fieldSources(annual.slice(0, 2), ["equity"])),
-        "yahoo_summary",
-        "finnhub_metric",
-      ]),
+      sourceKeys: ["summary", "annual"],
       sourceMap,
       formula: "roe_percent * (1 - payout_ratio_percent / 100)",
       notes: sustainableGrowth.reason ? [sustainableGrowth.reason] : undefined,
@@ -1773,29 +1150,23 @@ export async function buildReportEvaluationSnapshot(input: {
       key: "dividend_payout_ratio",
       label: "Dividend Payout Ratio",
       category: "dividend",
-      value: payoutRatio,
-      basis: latestValue([yahoo.payoutRatioPercent, finnhubMetric.payoutRatioPercent]) !== null ? "reported" : "derived",
+      value: summary.payoutRatioPercent,
+      basis: "reported",
       format: percentText,
-      sourceKeys: sourceKeysFromMaybe([
-        yahoo.payoutRatioPercent !== null ? "yahoo_summary" : undefined,
-        finnhubMetric.payoutRatioPercent !== null ? "finnhub_metric" : undefined,
-      ]),
+      sourceKeys: ["summary"],
       sourceMap,
-      notes: payoutRatio === null ? ["requires observed payout ratio"] : undefined,
+      notes: summary.payoutRatioPercent === null ? ["requires Yahoo payout ratio data"] : undefined,
     }),
     metricRecord({
       key: "dividend_yield",
       label: "Dividend Yield",
       category: "dividend",
-      value: dividendYield,
-      basis: latestValue([yahoo.dividendYieldPercent, finnhubMetric.dividendYieldPercent]) !== null ? "reported" : "derived",
+      value: summary.dividendYieldPercent,
+      basis: "reported",
       format: percentText,
-      sourceKeys: sourceKeysFromMaybe([
-        yahoo.dividendYieldPercent !== null ? "yahoo_summary" : undefined,
-        finnhubMetric.dividendYieldPercent !== null ? "finnhub_metric" : undefined,
-      ]),
+      sourceKeys: ["summary"],
       sourceMap,
-      notes: dividendYield === null ? ["requires observed dividend yield"] : undefined,
+      notes: summary.dividendYieldPercent === null ? ["requires Yahoo dividend yield data"] : undefined,
     }),
   ]
 
@@ -1804,45 +1175,40 @@ export async function buildReportEvaluationSnapshot(input: {
       key: "beta",
       label: "Beta",
       category: "stability",
-      value: beta,
+      value: summary.beta,
       basis: "reported",
       format: decimalText,
-      sourceKeys: sourceKeysFromMaybe([
-        yahoo.beta !== null ? "yahoo_summary" : undefined,
-        finnhubMetric.beta !== null ? "finnhub_metric" : undefined,
-      ]),
+      sourceKeys: ["summary"],
       sourceMap,
-      notes: beta === null ? ["requires observed beta"] : undefined,
+      notes: summary.beta === null ? ["requires Yahoo beta data"] : undefined,
     }),
   ]
 
-  ;[...fairness, ...quality, ...dividend, ...stability].forEach((item) => {
-    if (item.formatted === "unknown") {
-      const reason = item.notes?.find(Boolean) ?? "unknown"
-      unknowns.push(unknownReason(item.label, reason))
-    }
-  })
+  for (const item of [...fairness, ...quality, ...dividend, ...stability]) {
+    if (item.formatted !== "unknown") continue
+    const reason = item.notes?.find(Boolean) ?? "unknown"
+    unknowns.push(unknownReason(item.label, reason))
+  }
 
-  if (quarterlyAscending.length < 4) {
+  const lastFourQuarterPeriods = quarterly.slice(0, 4).reverse()
+  if (lastFourQuarterPeriods.length < 4) {
     unknowns.push("Last 4 quarters chart: fewer than four quarterly statement periods are available")
   }
 
-  const lastFourQuarters: QuarterlyBar[] = quarterlyAscending.map((period) => {
-    const source = sourceSummary(sourceMap, fieldSources([period], ["revenue", "netIncome"]))
-    return {
-      quarter: period.label,
-      revenue: period.revenue,
-      netIncome: period.netIncome,
-      source: source.source,
-      source_url: source.source_url,
-      retrieved_at: source.retrieved_at,
-    }
-  })
+  const quarterSource = sourceSummary(sourceMap, ["quarterly"])
+  const lastFourQuarters: QuarterlyBar[] = lastFourQuarterPeriods.map((period) => ({
+    quarter: period.label,
+    revenue: period.revenue,
+    netIncome: period.netIncome,
+    source: quarterSource.source,
+    source_url: quarterSource.source_url,
+    retrieved_at: quarterSource.retrieved_at,
+  }))
 
   return {
     ticker,
     generated_at: new Date().toISOString(),
-    current_price: currentPrice,
+    current_price: summary.currentPrice,
     fairness,
     quality,
     dividend,
@@ -1851,11 +1217,9 @@ export async function buildReportEvaluationSnapshot(input: {
     unknowns: normalizeUnknowns(unknowns),
   }
 }
+//#endregion
 
-function sourceKeysFromMaybe(input: Array<SourceKey | undefined>) {
-  return input.filter((item): item is SourceKey => Boolean(item))
-}
-
+//#region Markdown and artifacts
 function tableSection(title: string, rows: EvaluationMetric[]) {
   return [
     `## ${title}`,
@@ -1868,10 +1232,6 @@ function tableSection(title: string, rows: EvaluationMetric[]) {
     }),
     "",
   ]
-}
-
-function escapeCell(value: string) {
-  return value.replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
 export function renderReportEvaluationMarkdown(snapshot: ReportEvaluationSnapshot) {
@@ -1923,10 +1283,12 @@ export const ReportEvaluationInternal = {
   calculateAltmanZScore,
   calculateDcfPerShare,
   calculateFcfYield,
-  calculatePegy,
   calculatePiotroskiFScore,
-  calculatePriceToFcf,
+  calculateRatio,
+  calculatePriceMultiple,
   calculateRoic,
+  calculateRoe,
   calculateRuleOf40,
   calculateSustainableGrowthRate,
 }
+//#endregion
