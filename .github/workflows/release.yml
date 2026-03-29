@@ -32,16 +32,24 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
           PACKAGE_JSON="packages/opencode-finance/package.json"
           CURRENT_VERSION="$(bun -e "const pkg = JSON.parse(await Bun.file('${PACKAGE_JSON}').text()); process.stdout.write(pkg.version)")"
           PACKAGE_NAME="$(bun -e "const pkg = JSON.parse(await Bun.file('${PACKAGE_JSON}').text()); process.stdout.write(pkg.name)")"
+          PRERELEASE="false"
+          NPM_TAG="latest"
 
           if [[ "${CURRENT_VERSION}" == *-* ]]; then
-            echo "Prerelease versions are not allowed on main: ${CURRENT_VERSION}" >&2
-            exit 1
+            if [ "${GITHUB_REF_NAME}" = "main" ]; then
+              echo "Prerelease versions are not allowed on main: ${CURRENT_VERSION}" >&2
+              exit 1
+            fi
+
+            PRERELEASE="true"
+            NPM_TAG="beta"
           fi
 
           PREVIOUS_VERSION=""
@@ -72,6 +80,8 @@ jobs:
             echo "package_name=${PACKAGE_NAME}"
             echo "changed=${CHANGED}"
             echo "tag_exists=${TAG_EXISTS}"
+            echo "prerelease=${PRERELEASE}"
+            echo "npm_tag=${NPM_TAG}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Skip when version did not change
@@ -103,6 +113,7 @@ jobs:
 
           PACKAGE_NAME="${{ steps.determine.outputs.package_name }}"
           CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
+          NPM_TAG="${{ steps.determine.outputs.npm_tag }}"
           ENCODED_NAME="${PACKAGE_NAME//@/%40}"
           ENCODED_NAME="${ENCODED_NAME//\//%2F}"
 
@@ -112,7 +123,7 @@ jobs:
           fi
 
           cd packages/opencode-finance
-          npm publish --access public --provenance
+          npm publish --access public --provenance --tag "${NPM_TAG}"
 
       - name: Ensure release tag exists
         if: steps.determine.outputs.changed == 'true'
@@ -141,10 +152,16 @@ jobs:
 
           CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
           TAG="v${CURRENT_VERSION}"
+          PRERELEASE="${{ steps.determine.outputs.prerelease }}"
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists."
             exit 0
           fi
 
-          gh release create "${TAG}" --title "${TAG}" --verify-tag --generate-notes
+          ARGS=(release create "${TAG}" --title "${TAG}" --verify-tag --generate-notes)
+          if [ "${PRERELEASE}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+
+          gh "${ARGS[@]}"
