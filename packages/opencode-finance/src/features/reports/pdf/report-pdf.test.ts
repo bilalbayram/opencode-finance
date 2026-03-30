@@ -181,6 +181,33 @@ const REPORT_EVALUATION_SNAPSHOT = {
   unknowns: [],
 } as const
 
+const VALID_REPORT_COVER = {
+  ...COVER,
+  score: "78",
+  band: "bullish",
+  positive: ["durable growth"],
+  negative: ["valuation"],
+  metrics: [
+    { label: "Stock Price", value: "$210.10", tone: "positive" as const },
+    { label: "Daily Change", value: "+1.2%", tone: "positive" as const },
+    { label: "YTD Return", value: "+9.4%", tone: "positive" as const },
+    { label: "52W Range", value: "$164 - $220", tone: "neutral" as const },
+    { label: "Analyst Consensus", value: "Buy", tone: "positive" as const },
+    { label: "Sector", value: "Technology", tone: "neutral" as const },
+  ],
+}
+
+const VALID_REPORT_DASHBOARD = [
+  "# Dashboard",
+  "",
+  "| Metric | Value | Source | Source URL | Retrieved At |",
+  "| --- | --- | --- | --- | --- |",
+  "| Revenue | 120000000000 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+  "| Net income | 34000000000 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+  "| Free cash flow | 28000000000 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+  "| Debt-to-equity | 1.45 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+].join("\n")
+
 function toolContext(worktree: string) {
   return {
     directory: worktree,
@@ -244,6 +271,21 @@ describe("report_pdf government-trading profile", () => {
 
     expect(issues.some((item) => item.includes("normalized-events.json"))).toBeTrue()
   })
+
+  test("routes government-trading quality issues through profile dispatcher", () => {
+    const issues = ReportPdfInternal.qualityIssuesBySubcommand({
+      subcommand: "government-trading",
+      info: COVER,
+      report: GOVERNMENT_ARTIFACTS.report,
+      dashboard: GOVERNMENT_ARTIFACTS.dashboard,
+      assumptions: GOVERNMENT_ARTIFACTS.assumptions,
+      normalizedEventsJson: "{\"bad\":true}",
+      deltaEventsJson: GOVERNMENT_ARTIFACTS.deltaEventsJson,
+      dataJson: GOVERNMENT_ARTIFACTS.dataJson,
+    })
+
+    expect(issues).toContain("`normalized-events.json` must be a valid JSON array.")
+  })
 })
 
 describe("report_pdf darkpool profile", () => {
@@ -269,6 +311,20 @@ describe("report_pdf darkpool profile", () => {
     })
 
     expect(issues.some((item) => item.includes("transitions"))).toBeTrue()
+  })
+
+  test("routes darkpool quality issues through profile dispatcher", () => {
+    const issues = ReportPdfInternal.qualityIssuesBySubcommand({
+      subcommand: "darkpool-anomaly",
+      info: COVER,
+      report: DARKPOOL_ARTIFACTS.report,
+      dashboard: DARKPOOL_ARTIFACTS.dashboard,
+      assumptions: DARKPOOL_ARTIFACTS.assumptions,
+      evidenceMarkdown: DARKPOOL_ARTIFACTS.evidenceMarkdown,
+      evidenceJson: JSON.stringify({ tickers: [], anomalies: [] }),
+    })
+
+    expect(issues).toContain("`evidence.json` must include `transitions` array.")
   })
 })
 
@@ -299,6 +355,35 @@ describe("report_pdf report profile", () => {
 
     expect(issues).toContain("Missing required report artifact `evaluation.md`.")
     expect(issues).toContain("Missing required report artifact `evaluation-snapshot.json`.")
+  })
+
+  test("keeps dashboard source-attribution gate behavior unchanged", () => {
+    const dashboard = [
+      "# Dashboard",
+      "",
+      "| Metric | Value | Source | Source URL | Retrieval Timestamp |",
+      "| --- | --- | --- | --- | --- |",
+      "| Revenue | 120000000000 |  | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+      "| Net income | 34000000000 | Polygon | https://finnhub.io/api/v1/stock/metric?symbol=AAPL&metric=all | 2026-02-26T00:00:00.000Z |",
+      "| Free cash flow | 28000000000 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL |  |",
+      "| Debt-to-equity | 1.45 | Polygon | https://api.polygon.io/vX/reference/financials?ticker=AAPL | 2026-02-26T00:00:00.000Z |",
+    ].join("\n")
+
+    const issues = ReportPdfInternal.qualityIssuesBySubcommand({
+      subcommand: "report",
+      info: VALID_REPORT_COVER,
+      report: "# Report\n",
+      dashboard,
+      assumptions: "{}",
+      evaluationMarkdown: "# Deterministic Evaluation Snapshot\n",
+      evaluationSnapshotJson: JSON.stringify(REPORT_EVALUATION_SNAPSHOT),
+    })
+
+    expect(issues).toEqual([
+      "Numeric metric `Revenue` is missing source attribution in `dashboard.md`.",
+      "Numeric metric `Net income` source label `Polygon` does not match source URL `https://finnhub.io/api/v1/stock/metric?symbol=AAPL&metric=all`.",
+      "Numeric metric `Free cash flow` is missing retrieval timestamp in `dashboard.md`.",
+    ])
   })
 })
 

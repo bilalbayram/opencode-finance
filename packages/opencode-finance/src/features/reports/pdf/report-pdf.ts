@@ -1250,7 +1250,7 @@ function cell(input: string) {
   return cleanInline(input).replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
-function qualityIssuesBySubcommand(input: {
+type QualityIssuesInput = {
   subcommand: PdfSubcommand
   info: Cover
   report: string
@@ -1265,46 +1265,27 @@ function qualityIssuesBySubcommand(input: {
   evidenceJson?: string
   aggregateJson?: string
   comparisonJson?: string
-}) {
-  if (input.subcommand === "government-trading") {
-    return qualityIssuesGovernmentTrading({
-      report: input.report,
-      dashboard: input.dashboard,
-      assumptions: input.assumptions,
-      normalizedEventsJson: input.normalizedEventsJson,
-      deltaEventsJson: input.deltaEventsJson,
-      dataJson: input.dataJson,
-    })
-  }
+}
 
-  if (input.subcommand === "darkpool-anomaly") {
-    return qualityIssuesDarkpool({
-      report: input.report,
-      dashboard: input.dashboard,
-      assumptions: input.assumptions,
-      evidenceMarkdown: input.evidenceMarkdown,
-      evidenceJson: input.evidenceJson,
-    })
-  }
+function qualityIssuesBySubcommand(input: QualityIssuesInput): string[] {
+  return getPdfProfile(input.subcommand).qualityGate({ info: input.info, artifacts: qualityGateArtifacts(input) })
+}
 
-  if (input.subcommand === "political-backtest") {
-    return qualityIssuesPoliticalBacktest({
-      report: input.report,
-      dashboard: input.dashboard,
-      assumptions: input.assumptions,
-      aggregateJson: input.aggregateJson,
-      comparisonJson: input.comparisonJson,
-    })
+function qualityGateArtifacts(input: QualityIssuesInput): LoadedArtifacts {
+  return {
+    report: input.report,
+    dashboard: input.dashboard,
+    assumptions: input.assumptions,
+    evaluationMarkdown: input.evaluationMarkdown,
+    evaluationSnapshotJson: input.evaluationSnapshotJson,
+    normalizedEventsJson: input.normalizedEventsJson,
+    deltaEventsJson: input.deltaEventsJson,
+    dataJson: input.dataJson,
+    evidenceMarkdown: input.evidenceMarkdown,
+    evidenceJson: input.evidenceJson,
+    aggregateJson: input.aggregateJson,
+    comparisonJson: input.comparisonJson,
   }
-
-  return qualityIssuesReport(
-    input.info,
-    input.report,
-    input.dashboard,
-    input.assumptions,
-    input.evaluationMarkdown,
-    input.evaluationSnapshotJson,
-  )
 }
 
 function qualityIssuesGovernmentTrading(input: {
@@ -1314,75 +1295,60 @@ function qualityIssuesGovernmentTrading(input: {
   normalizedEventsJson?: string
   deltaEventsJson?: string
   dataJson?: string
-}) {
+}): string[] {
   const issues: string[] = []
   if (!/^#\s+government trading report\b/im.test(input.report)) {
     issues.push("Government-trading PDF export requires `report.md` to start with `# Government Trading Report`.")
   }
-
   if (!input.dashboard) {
     issues.push("Government-trading PDF export requires `dashboard.md`.")
   } else if (!/^#\s+government trading dashboard\b/im.test(input.dashboard)) {
     issues.push("Government-trading PDF export requires `dashboard.md` to start with `# Government Trading Dashboard`.")
   }
-
-  const requiredRunMetadataKeys = ["mode", "scope", "generated_at", "run_id"] as const
-  for (const key of requiredRunMetadataKeys) {
-    const matcher = new RegExp(`^-\\s*${key}\\s*:`, "im")
-    if (!matcher.test(input.report)) {
+  for (const key of ["mode", "scope", "generated_at", "run_id"] as const) {
+    if (!new RegExp(`^-\\s*${key}\\s*:`, "im").test(input.report)) {
       issues.push(`Government-trading report metadata is missing \`${key}\` in \`report.md\`.`)
     }
   }
-
-  const requiredDeltaMetrics = [
+  for (const metric of [
     "current_events",
     "new_events",
     "updated_events",
     "unchanged_events",
     "no_longer_present_events",
-  ] as const
-  for (const metric of requiredDeltaMetrics) {
-    const matcher = new RegExp(`\\|\\s*${metric}\\s*\\|`, "i")
-    if (!matcher.test(input.dashboard ?? "")) {
+  ] as const) {
+    if (!new RegExp(`\\|\\s*${metric}\\s*\\|`, "i").test(input.dashboard ?? "")) {
       issues.push(`Government-trading dashboard is missing delta metric \`${metric}\` in \`dashboard.md\`.`)
     }
   }
-
-  if (!input.assumptions) {
-    issues.push("Missing required government-trading artifact `assumptions.json`.")
-  } else {
-    const parsed = parseJson(input.assumptions)
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      issues.push("`assumptions.json` must be a valid JSON object.")
-    }
-  }
-
-  if (!input.normalizedEventsJson) {
-    issues.push("Missing required government-trading artifact `normalized-events.json`.")
-  } else {
-    const parsed = parseJson(input.normalizedEventsJson)
-    if (!Array.isArray(parsed)) {
-      issues.push("`normalized-events.json` must be a valid JSON array.")
-    }
-  }
-
-  if (!input.deltaEventsJson) {
-    issues.push("Missing required government-trading artifact `delta-events.json`.")
-  } else {
-    const parsed = parseJson(input.deltaEventsJson)
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      issues.push("`delta-events.json` must be a valid JSON object.")
-    }
-  }
-
-  if (!input.dataJson) {
-    issues.push("Missing required government-trading artifact `data.json`.")
-  } else {
-    const parsed = parseJson(input.dataJson)
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      issues.push("`data.json` must be a valid JSON object.")
-    }
-  }
+  readRequiredJsonArtifact(
+    issues,
+    input.assumptions,
+    "Missing required government-trading artifact `assumptions.json`.",
+    "`assumptions.json` must be a valid JSON object.",
+    "object",
+  )
+  readRequiredJsonArtifact(
+    issues,
+    input.normalizedEventsJson,
+    "Missing required government-trading artifact `normalized-events.json`.",
+    "`normalized-events.json` must be a valid JSON array.",
+    "array",
+  )
+  readRequiredJsonArtifact(
+    issues,
+    input.deltaEventsJson,
+    "Missing required government-trading artifact `delta-events.json`.",
+    "`delta-events.json` must be a valid JSON object.",
+    "object",
+  )
+  readRequiredJsonArtifact(
+    issues,
+    input.dataJson,
+    "Missing required government-trading artifact `data.json`.",
+    "`data.json` must be a valid JSON object.",
+    "object",
+  )
 
   return issues
 }
@@ -1393,115 +1359,87 @@ function qualityIssuesPoliticalBacktest(input: {
   assumptions?: string
   aggregateJson?: string
   comparisonJson?: string
-}) {
+}): string[] {
   const issues: string[] = []
   if (!/^#\s+Political Event Backtest:\s*[^\n]+$/im.test(input.report)) {
     issues.push("`report.md` must include heading `# Political Event Backtest: <scope>`.")
   }
-
-  const requiredReportMetadata = ["Generated at", "Mode", "Tickers", "Anchor Mode", "Windows (sessions)", "Benchmarks"] as const
-  for (const label of requiredReportMetadata) {
+  for (const label of ["Generated at", "Mode", "Tickers", "Anchor Mode", "Windows (sessions)", "Benchmarks"] as const) {
     if (!lineValue(input.report, label)) {
       issues.push(`\`report.md\` is missing metadata line \`${label}: ...\`.`)
     }
   }
-
   if (!input.dashboard) {
     issues.push("Missing required political-backtest artifact `dashboard.md`.")
-  } else {
-    const tables = tableBlocks(input.dashboard)
-    const hasAggregateTable = tables.some((table) => {
-      const head = table.head.map((cell) => normalize(cell))
-      const required = ["anchor", "window", "benchmark", "sample", "hit rate", "median return", "mean return", "mean excess"]
-      return required.every((item) => head.some((cell) => cell.includes(item)))
-    })
-    if (!hasAggregateTable) {
-      issues.push(
-        "`dashboard.md` must include aggregate table headers: Anchor, Window, Benchmark, Sample, Hit Rate %, Median Return %, Mean Return %, Mean Excess %.",
-      )
-    }
+  } else if (!tableHasRequiredHeaders(input.dashboard, ["anchor", "window", "benchmark", "sample", "hit rate", "median return", "mean return", "mean excess"])) {
+    issues.push(
+      "`dashboard.md` must include aggregate table headers: Anchor, Window, Benchmark, Sample, Hit Rate %, Median Return %, Mean Return %, Mean Excess %.",
+    )
   }
-
-  if (!input.assumptions) {
-    issues.push("Missing required political-backtest artifact `assumptions.json`.")
-  } else {
-    const assumptions = asRecord(parseJson(input.assumptions))
-    if (!assumptions) {
-      issues.push("`assumptions.json` must be valid JSON object.")
-    } else if (assumptions.workflow !== "financial_political_backtest") {
-      issues.push("`assumptions.json.workflow` must equal `financial_political_backtest`.")
-    }
+  const assumptions = asRecord(
+    readRequiredJsonArtifact(
+      issues,
+      input.assumptions,
+      "Missing required political-backtest artifact `assumptions.json`.",
+      "`assumptions.json` must be valid JSON object.",
+      "object",
+    ),
+  )
+  if (assumptions && assumptions.workflow !== "financial_political_backtest") {
+    issues.push("`assumptions.json.workflow` must equal `financial_political_backtest`.")
   }
-
-  if (!input.aggregateJson) {
-    issues.push("Missing required political-backtest artifact `aggregate-results.json`.")
-  } else {
-    const payload = parseJson(input.aggregateJson)
-    if (!Array.isArray(payload) || payload.length === 0) {
-      issues.push("`aggregate-results.json` must be a non-empty JSON array.")
+  const aggregate = readRequiredJsonArtifact(
+    issues,
+    input.aggregateJson,
+    "Missing required political-backtest artifact `aggregate-results.json`.",
+    "`aggregate-results.json` must be a non-empty JSON array.",
+    "non-empty-array",
+  )
+  if (Array.isArray(aggregate) && aggregate.some((item) => !isValidPoliticalAggregateRow(item))) {
+    issues.push(
+      "`aggregate-results.json` rows must include valid anchor_kind, benchmark_symbol, window_sessions, sample_size, and numeric hit/return/excess metrics.",
+    )
+  }
+  const comparison = asRecord(
+    readRequiredJsonArtifact(
+      issues,
+      input.comparisonJson,
+      "Missing required political-backtest artifact `comparison.json`.",
+      "`comparison.json` must be a valid JSON object.",
+      "object",
+    ),
+  )
+  if (comparison) {
+    if (typeof comparison.first_run !== "boolean") {
+      issues.push("`comparison.json` must include boolean `first_run`.")
+    }
+    const eventSample = asRecord(comparison.event_sample)
+    if (!eventSample) {
+      issues.push("`comparison.json` must include object `event_sample`.")
     } else {
-      const invalid = payload.find((item) => {
-        const row = asRecord(item)
-        if (!row) return true
-        const anchor = asOptionalText(row.anchor_kind)?.toLowerCase()
-        const benchmark = asOptionalText(row.benchmark_symbol)
-        const numericKeys = [
-          "window_sessions",
-          "sample_size",
-          "hit_rate_percent",
-          "mean_return_percent",
-          "median_return_percent",
-          "mean_excess_return_percent",
-        ] as const
-        if ((anchor !== "transaction" && anchor !== "report") || !benchmark) return true
-        return numericKeys.some((key) => !Number.isFinite(toFiniteNumber(row[key])))
-      })
-      if (invalid) {
-        issues.push(
-          "`aggregate-results.json` rows must include valid anchor_kind, benchmark_symbol, window_sessions, sample_size, and numeric hit/return/excess metrics.",
-        )
+      if (!Number.isFinite(toFiniteNumber(eventSample.current))) {
+        issues.push("`comparison.json.event_sample.current` must be numeric.")
+      }
+      if (!Number.isFinite(toFiniteNumber(eventSample.baseline))) {
+        issues.push("`comparison.json.event_sample.baseline` must be numeric.")
+      }
+      if (!Array.isArray(eventSample.new_events)) {
+        issues.push("`comparison.json.event_sample.new_events` must be an array.")
+      }
+      if (!Array.isArray(eventSample.removed_events)) {
+        issues.push("`comparison.json.event_sample.removed_events` must be an array.")
       }
     }
-  }
-
-  if (!input.comparisonJson) {
-    issues.push("Missing required political-backtest artifact `comparison.json`.")
-  } else {
-    const root = asRecord(parseJson(input.comparisonJson))
-    if (!root) {
-      issues.push("`comparison.json` must be a valid JSON object.")
-    } else {
-      if (typeof root.first_run !== "boolean") {
-        issues.push("`comparison.json` must include boolean `first_run`.")
-      }
-      const eventSample = asRecord(root.event_sample)
-      if (!eventSample) {
-        issues.push("`comparison.json` must include object `event_sample`.")
+    if (comparison.first_run === false) {
+      const baseline = asRecord(comparison.baseline)
+      if (!baseline) {
+        issues.push("`comparison.json.baseline` must exist when `first_run` is false.")
       } else {
-        if (!Number.isFinite(toFiniteNumber(eventSample.current))) {
-          issues.push("`comparison.json.event_sample.current` must be numeric.")
+        if (!asOptionalText(baseline.output_root)) {
+          issues.push("`comparison.json.baseline.output_root` is required when `first_run` is false.")
         }
-        if (!Number.isFinite(toFiniteNumber(eventSample.baseline))) {
-          issues.push("`comparison.json.event_sample.baseline` must be numeric.")
-        }
-        if (!Array.isArray(eventSample.new_events)) {
-          issues.push("`comparison.json.event_sample.new_events` must be an array.")
-        }
-        if (!Array.isArray(eventSample.removed_events)) {
-          issues.push("`comparison.json.event_sample.removed_events` must be an array.")
-        }
-      }
-      if (root.first_run === false) {
-        const baseline = asRecord(root.baseline)
-        if (!baseline) {
-          issues.push("`comparison.json.baseline` must exist when `first_run` is false.")
-        } else {
-          if (!asOptionalText(baseline.output_root)) {
-            issues.push("`comparison.json.baseline.output_root` is required when `first_run` is false.")
-          }
-          if (!asOptionalText(baseline.generated_at)) {
-            issues.push("`comparison.json.baseline.generated_at` is required when `first_run` is false.")
-          }
+        if (!asOptionalText(baseline.generated_at)) {
+          issues.push("`comparison.json.baseline.generated_at` is required when `first_run` is false.")
         }
       }
     }
@@ -1517,52 +1455,46 @@ function qualityIssuesReport(
   assumptions: string | undefined,
   evaluationMarkdown: string | undefined,
   evaluationSnapshotJson: string | undefined,
-) {
+): string[] {
   const issues: string[] = []
-  const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
-  critical.forEach((label) => {
+  for (const label of ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"] as const) {
     const value = info.metrics.find((item) => item.label === label)?.value ?? "unknown"
-    if (isUnknown(value)) {
-      if (label === "52W Range") {
-        issues.push(
-          "Critical cover metric `52W Range` resolved to `unknown`; fill either `52W Range` or both `52W Low` and `52W High` in `dashboard.md`.",
-        )
-        return
-      }
-      issues.push(`Critical cover metric \`${label}\` resolved to \`unknown\`; fill ${label} in \`dashboard.md\`.`)
+    if (!isUnknown(value)) {
+      continue
     }
-  })
-
+    if (label === "52W Range") {
+      issues.push(
+        "Critical cover metric `52W Range` resolved to `unknown`; fill either `52W Range` or both `52W Low` and `52W High` in `dashboard.md`.",
+      )
+      continue
+    }
+    issues.push(`Critical cover metric \`${label}\` resolved to \`unknown\`; fill ${label} in \`dashboard.md\`.`)
+  }
   if (isUnknown(info.score) || isUnknown(info.band)) {
     issues.push(
       "Directional conviction score/band is `unknown`; ensure `report.md` includes `Score: <0-100> | Band: <bearish|neutral|bullish>` (or `Score: <0-100>/100` with an explicit band).",
     )
   }
-
   const sourceBody = [report, dashboard, assumptions]
     .filter((item): item is string => Boolean(item))
     .join("\n")
   if (/\b(websearch_exa|websearch|exa)\b/i.test(sourceBody)) {
     issues.push("Generic source labels (`websearch`/`exa`) detected; cite the original publisher/domain and URL instead.")
   }
-
-  const core = [
+  for (const item of [
     { label: "Revenue", patterns: [/^revenue(?:\b|\s*\()/i] },
     { label: "Net income", patterns: [/^net income(?:\b|\s*\()/i, /^netincome(?:\b|\s*\()/i] },
     { label: "Free cash flow", patterns: [/^free cash flow(?:\b|\s*\()/i, /^freecashflow(?:\b|\s*\()/i] },
     { label: "Debt-to-equity", patterns: [/^debt[\s-]*to[\s-]*equity(?:\b|\s*\()/i, /^debtequity(?:\b|\s*\()/i] },
-  ]
-  core.forEach((item) => {
+  ]) {
     const value = metricValue(dashboard, item.patterns) ?? metricValue(report, item.patterns)
     if (!value || isUnknown(value)) {
       issues.push(`Core fundamental \`${item.label}\` is unresolved; include a sourced value or regenerate data before PDF export.`)
     }
-  })
-
+  }
   if (!evaluationMarkdown) {
     issues.push("Missing required report artifact `evaluation.md`.")
   }
-
   if (!evaluationSnapshotJson) {
     issues.push("Missing required report artifact `evaluation-snapshot.json`.")
   } else {
@@ -1580,7 +1512,6 @@ function qualityIssuesReport(
   }
 
   issues.push(...dashboardSourceIssues(dashboard))
-
   return issues
 }
 
@@ -1590,7 +1521,7 @@ function qualityIssuesDarkpool(input: {
   assumptions?: string
   evidenceMarkdown?: string
   evidenceJson?: string
-}) {
+}): string[] {
   const issues: string[] = []
   if (!/^#\s+Darkpool Anomaly Report\b/im.test(input.report)) {
     issues.push("`report.md` must start with `# Darkpool Anomaly Report`.")
@@ -1601,7 +1532,6 @@ function qualityIssuesDarkpool(input: {
   if (!/Significance threshold \(\|z\|\):\s*[-+]?\d+(?:\.\d+)?/i.test(input.report)) {
     issues.push("`report.md` is missing a numeric `Significance threshold (|z|)` line.")
   }
-
   if (!input.dashboard) {
     issues.push("Missing required darkpool artifact `dashboard.md`.")
   } else if (!hasDarkpoolAnomalyTable(input.dashboard)) {
@@ -1609,88 +1539,139 @@ function qualityIssuesDarkpool(input: {
       "`dashboard.md` must include an anomaly table with columns: Ticker, Date, Metric, Current, Baseline, |z|, Severity, Direction, State.",
     )
   }
-
-  if (!input.assumptions) {
-    issues.push("Missing required darkpool artifact `assumptions.json`.")
-  } else {
-    const parsed = parseJson(input.assumptions)
-    const root = asRecord(parsed)
-    const detection = asRecord(root?.detection_parameters)
-    if (!root || !detection) {
-      issues.push("`assumptions.json` must be valid JSON and include `detection_parameters`.")
-    } else {
-      if (!Number.isFinite(toFiniteNumber(detection.lookback_days))) {
-        issues.push("`assumptions.json` is missing numeric `detection_parameters.lookback_days`.")
-      }
-      if (!Number.isFinite(toFiniteNumber(detection.min_samples))) {
-        issues.push("`assumptions.json` is missing numeric `detection_parameters.min_samples`.")
-      }
-      if (!Number.isFinite(toFiniteNumber(detection.significance_threshold))) {
-        issues.push("`assumptions.json` is missing numeric `detection_parameters.significance_threshold`.")
+  const assumptions = asRecord(
+    readRequiredJsonArtifact(
+      issues,
+      input.assumptions,
+      "Missing required darkpool artifact `assumptions.json`.",
+      "`assumptions.json` must be valid JSON and include `detection_parameters`.",
+      "object",
+    ),
+  )
+  const detection = asRecord(assumptions?.detection_parameters)
+  if (assumptions && !detection) {
+    issues.push("`assumptions.json` must be valid JSON and include `detection_parameters`.")
+  } else if (detection) {
+    for (const key of ["lookback_days", "min_samples", "significance_threshold"] as const) {
+      if (!Number.isFinite(toFiniteNumber(detection[key]))) {
+        issues.push(`\`assumptions.json\` is missing numeric \`detection_parameters.${key}\`.`)
       }
     }
   }
-
   if (!input.evidenceMarkdown) {
     issues.push("Missing required darkpool artifact `evidence.md`.")
   }
-
-  if (!input.evidenceJson) {
-    issues.push("Missing required darkpool artifact `evidence.json`.")
-  } else {
-    const parsed = parseJson(input.evidenceJson)
-    const root = asRecord(parsed)
-    if (!root) {
-      issues.push("`evidence.json` must be valid JSON object output from `report_darkpool_anomaly`.")
+  const evidence = asRecord(
+    readRequiredJsonArtifact(
+      issues,
+      input.evidenceJson,
+      "Missing required darkpool artifact `evidence.json`.",
+      "`evidence.json` must be valid JSON object output from `report_darkpool_anomaly`.",
+      "object",
+    ),
+  )
+  if (evidence) {
+    if (!Array.isArray(evidence.tickers)) {
+      issues.push("`evidence.json` must include `tickers` array.")
+    }
+    if (!Array.isArray(evidence.anomalies)) {
+      issues.push("`evidence.json` must include `anomalies` array.")
+    }
+    if (!Array.isArray(evidence.transitions)) {
+      issues.push("`evidence.json` must include `transitions` array.")
     } else {
-      if (!Array.isArray(root.tickers)) {
-        issues.push("`evidence.json` must include `tickers` array.")
+      const validState = new Set(["new", "persisted", "severity_change", "resolved"])
+      if (!evidence.transitions.every((item) => validState.has(String(asRecord(item)?.state ?? "").trim()))) {
+        issues.push("`evidence.json.transitions` entries must include valid `state` values.")
       }
-      if (!Array.isArray(root.anomalies)) {
-        issues.push("`evidence.json` must include `anomalies` array.")
-      }
-      if (!Array.isArray(root.transitions)) {
-        issues.push("`evidence.json` must include `transitions` array.")
-      } else {
-        const validState = new Set(["new", "persisted", "severity_change", "resolved"])
-        if (!root.transitions.every((item) => asRecord(item) && validState.has(String(asRecord(item)?.state ?? "").trim()))) {
-          issues.push("`evidence.json.transitions` entries must include valid `state` values.")
-        }
-      }
-      if (Array.isArray(root.anomalies)) {
-        const validAnomalyShape = root.anomalies.every((item) => {
-          const row = asRecord(item)
-          if (!row) return false
-          const ticker = asOptionalText(row.ticker)
-          const severity = asOptionalText(row.severity)
-          const direction = asOptionalText(row.direction)
-          const absZ = toFiniteNumber(row.abs_z_score)
-          return Boolean(ticker && severity && direction && Number.isFinite(absZ))
-        })
-        if (!validAnomalyShape) {
-          issues.push("`evidence.json.anomalies` entries must include ticker, severity, direction, and numeric abs_z_score.")
-        }
-      }
+    }
+    if (
+      Array.isArray(evidence.anomalies) &&
+      !evidence.anomalies.every((item) => {
+        const row = asRecord(item)
+        if (!row) return false
+        const ticker = asOptionalText(row.ticker)
+        const severity = asOptionalText(row.severity)
+        const direction = asOptionalText(row.direction)
+        const absZ = toFiniteNumber(row.abs_z_score)
+        return Boolean(ticker && severity && direction && Number.isFinite(absZ))
+      })
+    ) {
+      issues.push("`evidence.json.anomalies` entries must include ticker, severity, direction, and numeric abs_z_score.")
     }
   }
 
   return issues
 }
 
-function hasDarkpoolAnomalyTable(input: string) {
-  const required = ["ticker", "date", "metric", "current", "baseline", "z", "severity", "direction", "state"]
-  return tableBlocks(input).some((table) => {
-    const normalized = table.head.map((cell) => normalize(cell))
-    return required.every((item) => normalized.some((cell) => cell.includes(item)))
+function readRequiredJsonArtifact(
+  issues: string[],
+  content: string | undefined,
+  missingMessage: string,
+  invalidMessage: string,
+  shape: "object" | "array" | "non-empty-array",
+): unknown {
+  if (!content) {
+    issues.push(missingMessage)
+    return
+  }
+  const parsed = parseJson(content)
+  if (shape === "object") {
+    if (!asRecord(parsed)) {
+      issues.push(invalidMessage)
+      return
+    }
+    return parsed
+  }
+
+  if (!Array.isArray(parsed) || (shape === "non-empty-array" && parsed.length === 0)) {
+    issues.push(invalidMessage)
+    return
+  }
+
+  return parsed
+}
+
+function tableHasRequiredHeaders(markdown: string, required: readonly string[]): boolean {
+  return tableBlocks(markdown).some((table) => {
+    const head = table.head.map((cell) => normalize(cell))
+    return required.every((item) => head.some((cell) => cell.includes(item)))
   })
 }
 
-function asRecord(input: unknown) {
+function isValidPoliticalAggregateRow(input: unknown): boolean {
+  const row = asRecord(input)
+  if (!row) {
+    return false
+  }
+
+  const anchor = asOptionalText(row.anchor_kind)?.toLowerCase()
+  const benchmark = asOptionalText(row.benchmark_symbol)
+  if ((anchor !== "transaction" && anchor !== "report") || !benchmark) {
+    return false
+  }
+
+  const numericKeys = [
+    "window_sessions",
+    "sample_size",
+    "hit_rate_percent",
+    "mean_return_percent",
+    "median_return_percent",
+    "mean_excess_return_percent",
+  ] as const
+  return numericKeys.every((key) => Number.isFinite(toFiniteNumber(row[key])))
+}
+
+function hasDarkpoolAnomalyTable(input: string): boolean {
+  return tableHasRequiredHeaders(input, ["ticker", "date", "metric", "current", "baseline", "z", "severity", "direction", "state"])
+}
+
+function asRecord(input: unknown): Record<string, unknown> | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return
   return input as Record<string, unknown>
 }
 
-function asRecordArray(input: unknown, error: string) {
+function asRecordArray(input: unknown, error: string): Record<string, unknown>[] {
   if (!Array.isArray(input)) {
     throw new Error(error)
   }
@@ -1699,14 +1680,14 @@ function asRecordArray(input: unknown, error: string) {
     .filter((item): item is Record<string, unknown> => Boolean(item))
 }
 
-function asOptionalText(input: unknown) {
+function asOptionalText(input: unknown): string | undefined {
   if (input === null || input === undefined) return
   const text = String(input).trim()
   if (!text) return
   return text
 }
 
-function toFiniteNumber(input: unknown) {
+function toFiniteNumber(input: unknown): number {
   if (typeof input === "number") return Number.isFinite(input) ? input : Number.NaN
   if (typeof input === "string") {
     const text = input.trim()
@@ -1717,75 +1698,95 @@ function toFiniteNumber(input: unknown) {
   return Number.NaN
 }
 
-function severityRank(value: string) {
+function severityRank(value: string): number {
   if (value === "high") return 3
   if (value === "medium") return 2
   if (value === "low") return 1
   return 0
 }
 
-function isUnknown(value: string) {
+function isUnknown(value: string): boolean {
   const text = value.trim()
   if (!text) return true
   if (/\bunknown\b/i.test(text)) return true
   return /^(n\/?a|-|none)$/i.test(text)
 }
 
-function dashboardSourceIssues(dashboard: string | undefined) {
+function dashboardSourceIssues(dashboard: string | undefined): string[] {
   if (!dashboard) return []
   const issues: string[] = []
-  const tables = tableBlocks(dashboard)
-  tables.forEach((table) => {
-    const head = table.head.map((cell) => normalize(cell))
-    const source = head.findIndex((cell) => cell === "source" || cell === "data source" || cell.endsWith(" source"))
-    const sourceUrl = head.findIndex((cell) => cell.includes("url"))
-    const retrieval = head.findIndex(
-      (cell) => cell.includes("retrieval") || cell.includes("timestamp") || cell === "time" || cell.endsWith(" time"),
-    )
-    if (source === -1 && sourceUrl === -1 && retrieval === -1) return
-
-    const value = valueColumnIndex(head)
-    table.rows.forEach((row) => {
-      const label = cleanInline(row[0] ?? "").trim()
-      if (!label || normalize(label) === "metric" || normalize(label) === "kpi") return
-      const observed = cleanInline(row[value] ?? row[1] ?? "").trim()
-      if (!hasNumeric(observed)) return
-
-      const sourceCell = cleanInline(row[source] ?? "").trim()
-      if (!sourceCell) {
-        issues.push(`Numeric metric \`${label}\` is missing source attribution in \`dashboard.md\`.`)
-      } else {
-        if (/\b(websearch_exa|websearch|exa|search|internet)\b/i.test(sourceCell)) {
-          issues.push(`Numeric metric \`${label}\` uses a generic source label; cite the original publisher/domain.`)
-        }
-        if (!isFinancePublisher(sourceCell)) {
-          issues.push(
-            `Numeric metric \`${label}\` source \`${sourceCell}\` is not a supported financial provider (alphavantage, yfinance, finnhub, financial-modeling-prep, polygon, sec-edgar, quiver-quant, quartr).`,
-          )
-        }
-      }
-
-      if (sourceUrl !== -1) {
-        const urlCell = cleanInline(row[sourceUrl] ?? "").trim()
-        if (!urlCell) {
-          issues.push(`Numeric metric \`${label}\` is missing source URL in \`dashboard.md\`.`)
-        } else if (!sourceUrlMatches(sourceCell, urlCell)) {
-          issues.push(`Numeric metric \`${label}\` source label \`${sourceCell}\` does not match source URL \`${urlCell}\`.`)
-        }
-      }
-
-      if (retrieval === -1) return
-      const retrievalCell = cleanInline(row[retrieval] ?? "").trim()
-      if (!retrievalCell) {
-        issues.push(`Numeric metric \`${label}\` is missing retrieval timestamp in \`dashboard.md\`.`)
-        return
-      }
-      if (!isTimestamp(retrievalCell)) {
-        issues.push(`Numeric metric \`${label}\` retrieval value \`${retrievalCell}\` is not a valid timestamp.`)
-      }
-    })
-  })
+  for (const table of tableBlocks(dashboard)) {
+    const columns = dashboardSourceColumns(table.head)
+    if (!columns) {
+      continue
+    }
+    for (const row of table.rows) {
+      pushDashboardSourceRowIssues(issues, row, columns)
+    }
+  }
   return issues
+}
+
+function dashboardSourceColumns(head: string[]): { source: number; sourceUrl: number; retrieval: number; value: number } | undefined {
+  const normalized = head.map((cell) => normalize(cell))
+  const source = normalized.findIndex((cell) => cell === "source" || cell === "data source" || cell.endsWith(" source"))
+  const sourceUrl = normalized.findIndex((cell) => cell.includes("url"))
+  const retrieval = normalized.findIndex(
+    (cell) => cell.includes("retrieval") || cell.includes("timestamp") || cell === "time" || cell.endsWith(" time"),
+  )
+  if (source === -1 && sourceUrl === -1 && retrieval === -1) {
+    return
+  }
+  return { source, sourceUrl, retrieval, value: valueColumnIndex(normalized) }
+}
+
+function pushDashboardSourceRowIssues(
+  issues: string[],
+  row: string[],
+  columns: { source: number; sourceUrl: number; retrieval: number; value: number },
+): void {
+  const label = cleanInline(row[0] ?? "").trim()
+  const normalizedLabel = normalize(label)
+  if (!label || normalizedLabel === "metric" || normalizedLabel === "kpi") {
+    return
+  }
+  const observed = cleanInline(row[columns.value] ?? row[1] ?? "").trim()
+  if (!hasNumeric(observed)) {
+    return
+  }
+  const sourceCell = cleanInline(row[columns.source] ?? "").trim()
+  if (!sourceCell) {
+    issues.push(`Numeric metric \`${label}\` is missing source attribution in \`dashboard.md\`.`)
+  } else {
+    if (/\b(websearch_exa|websearch|exa|search|internet)\b/i.test(sourceCell)) {
+      issues.push(`Numeric metric \`${label}\` uses a generic source label; cite the original publisher/domain.`)
+    }
+    if (!isFinancePublisher(sourceCell)) {
+      issues.push(
+        `Numeric metric \`${label}\` source \`${sourceCell}\` is not a supported financial provider (alphavantage, yfinance, finnhub, financial-modeling-prep, polygon, sec-edgar, quiver-quant, quartr).`,
+      )
+    }
+  }
+  if (columns.sourceUrl !== -1) {
+    const urlCell = cleanInline(row[columns.sourceUrl] ?? "").trim()
+    if (!urlCell) {
+      issues.push(`Numeric metric \`${label}\` is missing source URL in \`dashboard.md\`.`)
+    } else if (!sourceUrlMatches(sourceCell, urlCell)) {
+      issues.push(`Numeric metric \`${label}\` source label \`${sourceCell}\` does not match source URL \`${urlCell}\`.`)
+    }
+  }
+
+  if (columns.retrieval === -1) {
+    return
+  }
+  const retrievalCell = cleanInline(row[columns.retrieval] ?? "").trim()
+  if (!retrievalCell) {
+    issues.push(`Numeric metric \`${label}\` is missing retrieval timestamp in \`dashboard.md\`.`)
+    return
+  }
+  if (!isTimestamp(retrievalCell)) {
+    issues.push(`Numeric metric \`${label}\` retrieval value \`${retrievalCell}\` is not a valid timestamp.`)
+  }
 }
 
 function tableBlocks(input: string) {
