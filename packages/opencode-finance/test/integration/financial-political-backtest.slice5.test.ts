@@ -5,8 +5,8 @@ import {
   runPoliticalEventStudyCore,
   type PoliticalEvent,
   type PriceBar,
-} from "../../src/finance/political-backtest"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
+} from "../../src/features/reports/political-backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/features/reports/political-backtest"
 
 describe("financial_political_backtest slice 5", () => {
   test("runs a portfolio-style backtest across multiple tickers", () => {

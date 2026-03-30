@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test } from "bun:test"
-import { OPENCLAW_TOOL_IDS, createOpenClawExecutionContext, loadOpenClawToolEntries } from "../../src/openclaw/tool-adapter"
+import { OPENCLAW_TOOL_IDS, createOpenClawExecutionContext, loadOpenClawToolEntries } from "../../src/entrypoints/openclaw/tool-adapter"
 
 const TEMP_ROOTS: string[] = []
 

@@ -6,7 +6,7 @@ import {
   renderReportEvaluationMarkdown,
   ReportEvaluationSnapshotSchema,
   writeReportEvaluationArtifacts,
-} from "../../src/report/evaluation"
+} from "../../src/features/reports/evaluation/evaluation"
 
 const SNAPSHOT = ReportEvaluationSnapshotSchema.parse({
   ticker: "AAPL",

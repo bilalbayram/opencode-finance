@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { buildReportEvaluationSnapshot, ReportEvaluationSnapshotSchema } from "../../src/report/evaluation"
+import { buildReportEvaluationSnapshot, ReportEvaluationSnapshotSchema } from "../../src/features/reports/evaluation/evaluation"
 
 const originalFetch = globalThis.fetch
 

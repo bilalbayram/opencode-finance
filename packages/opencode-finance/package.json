@@ -18,7 +18,7 @@
     "typecheck": "tsgo --noEmit",
     "build": "node ./scripts/build.mjs",
     "test": "bun run build && bun test ./test",
-    "prepack": "bun run build && cp ../../README.md README.md",
+    "prepack": "node ./scripts/prepack.mjs",
     "postpack": "rm -f README.md"
   },
   "exports": {

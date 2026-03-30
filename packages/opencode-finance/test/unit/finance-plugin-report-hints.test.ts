@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { reportExecutionConstraintLines } from "../../src/internal/report-execution-constraints"
+import { reportExecutionConstraintLines } from "../../src/features/reports/company/report-execution-constraints"
 
 describe("finance plugin report runtime hints", () => {
   test("includes report_evaluation and report_pdf steps for /report execution constraints", () => {

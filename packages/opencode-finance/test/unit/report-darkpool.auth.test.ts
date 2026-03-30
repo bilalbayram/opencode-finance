@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Auth } from "../../src/auth"
-import { Env } from "../../src/env"
-import { ReportDarkpoolAnomalyInternal } from "../../src/tool/report-darkpool/tool"
+import { Auth } from "../../src/core/auth"
+import { Env } from "../../src/core/env"
+import { ReportDarkpoolAnomalyInternal } from "../../src/features/reports/darkpool-anomaly/tool"
 
 type AuthGet = typeof Auth.get
 type EnvGet = typeof Env.get

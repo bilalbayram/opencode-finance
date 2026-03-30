@@ -3,7 +3,7 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 
 const packageDir = path.resolve(import.meta.dir, "../..")
-const skillPath = path.join(packageDir, "src", "skill", "finance-comprehensive-report.SKILL.md")
+const skillPath = path.join(packageDir, "src", "entrypoints", "skills", "finance-comprehensive-report.SKILL.md")
 
 describe("finance report skill contract", () => {
   test("keeps the decision-first, evidence-tagged report structure", async () => {

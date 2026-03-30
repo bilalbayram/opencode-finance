@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ReportPdfInternal } from "../../src/tool/pdf"
+import { ReportPdfInternal } from "../../src/features/reports/pdf"
 
 describe("extractSourcesSection broadened matching", () => {
     test("matches ## Source Register", () => {
