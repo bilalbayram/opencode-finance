@@ -21,7 +21,7 @@ if (tsc.status !== 0) {
 
 const openClawBundle = spawnSync(
   "bun",
-  ["build", "./src/openclaw/index.ts", "--outfile", "./dist/openclaw/index.cjs", "--target", "node", "--format", "cjs", "--packages", "external"],
+  ["build", "./src/entrypoints/openclaw/index.ts", "--outfile", "./dist/openclaw/index.cjs", "--target", "node", "--format", "cjs", "--packages", "external"],
   {
     cwd: packageDir,
     stdio: "inherit",

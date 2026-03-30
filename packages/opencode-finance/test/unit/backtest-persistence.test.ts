@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import type { AggregateWindow } from "../../src/finance/political-backtest"
-import { buildRunComparison } from "../../src/tool/financial-political-backtest/comparison"
-import { buildPersistenceTrends, clampLimit, createRunId } from "../../src/tool/report-government-trading/persistence"
+import type { AggregateWindow } from "../../src/features/reports/political-backtest"
+import { buildRunComparison } from "../../src/features/reports/political-backtest/comparison"
+import { buildPersistenceTrends, clampLimit, createRunId } from "../../src/features/reports/government-trading/persistence"
 
 const tempRoots: string[] = []
 

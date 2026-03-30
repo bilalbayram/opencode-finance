@@ -1,0 +1,14 @@
+Generate a deterministic evaluation snapshot for one report directory.
+
+Use this after `/report` writes `report.md`, `dashboard.md`, `assumptions.json`, and `adjustment-log.md`.
+
+Inputs:
+- `ticker`: public company ticker symbol
+- `outputRoot`: report directory path, usually `reports/<TICKER>/<YYYY-MM-DD>/`
+- `refresh` (optional): accepted for parity with finance tools; current implementation fetches directly from providers
+
+Behavior:
+- Writes `evaluation.md`
+- Writes `evaluation-snapshot.json`
+- Uses fixed source precedence, fixed formulas, and fixed DCF assumptions
+- Uses provider finance data only; never web search

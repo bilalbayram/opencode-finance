@@ -5,7 +5,7 @@ import {
   selectBenchmarks,
   type PoliticalEvent,
   type PriceBar,
-} from "../../src/finance/political-backtest"
+} from "../../src/features/reports/political-backtest"
 
 describe("financial_political_backtest slice 3", () => {
   test("selects SPY and sector ETF when relevance criteria are satisfied", () => {

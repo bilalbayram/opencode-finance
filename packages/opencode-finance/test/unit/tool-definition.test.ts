@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import z from "zod"
-import { Tool } from "../../src/tool/tool"
+import { Tool } from "../../src/core/tool"
 
 function createContext() {
   return {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-finance",
-  "version": "1.2.8",
+  "version": "1.2.9-beta.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,7 @@
     "typecheck": "tsgo --noEmit",
     "build": "node ./scripts/build.mjs",
     "test": "bun run build && bun test ./test",
-    "prepack": "bun run build && cp ../../README.md README.md",
+    "prepack": "node ./scripts/prepack.mjs",
     "postpack": "rm -f README.md"
   },
   "exports": {

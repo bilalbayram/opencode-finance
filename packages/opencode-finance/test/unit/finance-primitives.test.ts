@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { FINANCE_AUTH_PROVIDER, FINANCE_AUTH_PROVIDER_ID } from "../../src/finance/auth-provider"
-import { FinanceCache } from "../../src/finance/cache"
-import { headquarters, rows, asText, toDateOnly, toIsoDate, toNumber, toPercent } from "../../src/finance/parse-helpers"
-import { isValidSymbol, toUpperSymbol } from "../../src/finance/political-backtest/symbol"
+import { FINANCE_AUTH_PROVIDER, FINANCE_AUTH_PROVIDER_ID } from "../../src/integrations/finance/auth-provider"
+import { FinanceCache } from "../../src/integrations/finance/cache"
+import { headquarters, rows, asText, toDateOnly, toIsoDate, toNumber, toPercent } from "../../src/integrations/finance/parse-helpers"
+import { isValidSymbol, toUpperSymbol } from "../../src/features/reports/political-backtest/symbol"
 import {
   QUIVER_TIER_FALLBACK_WARNING,
   endpointMinimumPlan,
@@ -10,8 +10,8 @@ import {
   quiverPlanLabel,
   resolveQuiverTierFromAuth,
   tierAllows,
-} from "../../src/finance/quiver-tier"
-import type { NormalizedFinanceQuery } from "../../src/finance/types"
+} from "../../src/integrations/finance/quiver-tier"
+import type { NormalizedFinanceQuery } from "../../src/integrations/finance/types"
 
 const originalDateNow = Date.now
 

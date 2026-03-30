@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/features/reports/political-backtest"
 
 describe("financial_political_backtest slice 7", () => {
   test("uses workflow-specific default output roots to avoid /report path collisions", () => {

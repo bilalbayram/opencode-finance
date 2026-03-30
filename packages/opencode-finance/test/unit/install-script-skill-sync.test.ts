@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test"
 
 const packageDir = path.resolve(import.meta.dir, "../..")
 const repoRoot = path.resolve(packageDir, "../..")
-const canonicalSkillPath = path.join(packageDir, "src", "skill", "finance-comprehensive-report.SKILL.md")
+const canonicalSkillPath = path.join(packageDir, "src", "entrypoints", "skills", "finance-comprehensive-report.SKILL.md")
 const installScriptPath = path.join(repoRoot, "packages", "web", "public", "install.sh")
 
 function extractEmbeddedSkill(text: string) {

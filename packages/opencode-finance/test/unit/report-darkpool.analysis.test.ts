@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { readHistoricalRuns } from "../../src/tool/report-darkpool/analysis"
+import { readHistoricalRuns } from "../../src/features/reports/darkpool-anomaly/analysis"
 
 const tempRoots: string[] = []
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { FINANCE_SLASH_COMMANDS } from "../../src/command/finance"
+import { FINANCE_SLASH_COMMANDS } from "../../src/entrypoints/commands/finance"
 
 function templateFor(name: string) {
   const command = FINANCE_SLASH_COMMANDS.find((item) => item.name === name)
