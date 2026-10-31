@@ -2,16 +2,24 @@
   "$schema": "https://json.schemastore.org/tsconfig.json",
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist",
     "module": "preserve",
-    "declaration": true,
+    "declaration": false,
     "allowImportingTsExtensions": false,
-    "noEmit": false,
+    "noEmit": true,
     "moduleResolution": "bundler",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["bun", "node"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "bun",
+      "node"
+    ],
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

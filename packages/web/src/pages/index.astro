@@ -23,38 +23,40 @@ const reports = [
 
 const metrics = [
   {
-    label: "Report shape",
-    value: "Deterministic",
+    label: "Data",
+    value: "SEC EDGAR, direct",
   },
   {
-    label: "Primary output",
-    value: "PDF artifact",
+    label: "Every number",
+    value: "Cited to its filing",
   },
   {
-    label: "Review mode",
-    value: "Assumption-first",
+    label: "Works with",
+    value: "Any agent with skills",
   },
 ] as const
 
 const steps = [
-  "Prompt scope + ticker",
-  "Model synthesis + checks",
-  "Template lock + export",
-  "Delivery-ready PDF",
+  "Ask your agent about a company",
+  "fin pulls filings, XBRL, Form 4s, prices",
+  "Agent computes in code",
+  "Answer or report, every figure cited",
 ] as const
+
+const agents = "Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, OpenCode"
 
 const points = [
   {
-    title: "Rigid structure",
-    copy: "Every report uses the same information order, so teams can compare names without re-reading format noise.",
+    title: "Primary sources",
+    copy: "Fundamentals, filings, filing text and insider trades come straight from SEC EDGAR. No paid vendor in between.",
   },
   {
-    title: "Fast QA",
-    copy: "Assumptions and thesis points are exposed early, making analyst review a short pass instead of a rewrite.",
+    title: "Traceable numbers",
+    copy: "Every value carries its period, XBRL tag and filing link, and every response marks sources official or unofficial.",
   },
   {
-    title: "Distribution clean",
-    copy: "Outputs are generated as polished PDFs suitable for internal packets or direct client delivery.",
+    title: "Your agent, your analysis",
+    copy: "The skill supplies data and sourcing rules. Your agent writes the code for the math and shapes the report to the question.",
   },
 ] as const
 ---
@@ -63,21 +65,21 @@ const points = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>opencode-finance | Marketing</title>
+    <title>opencode-finance | Finance skill for coding agents</title>
     <meta
       name="description"
-      content="A minimalist pipeline for repeatable equity research reports with deterministic output shape."
+      content="A finance skill for coding agents: SEC filings, XBRL fundamentals, insider trades and prices from primary sources, with every number cited."
     />
   </head>
   <body>
     <main class="landing-shell">
       <section class="hero" aria-labelledby="landing-title">
         <div class="hero-main">
-          <p class="kicker">opencode-finance / workflow</p>
-          <h1 id="landing-title">Prompt in. Equity research out.</h1>
+          <p class="kicker">opencode-finance / skill</p>
+          <h1 id="landing-title">Equity research from the source.</h1>
           <p class="lede">
-            A minimalist pipeline for repeatable analyst reports. Keep thesis, assumptions, and output shape fixed while
-            moving from idea to publication in minutes.
+            A finance skill for {agents}. Your agent reads SEC filings and as-reported fundamentals directly, and cites the
+            filing behind every number.
           </p>
           <div class="actions">
             <a class="button solid" href="#reports">See report previews</a>
@@ -98,8 +100,9 @@ const points = [
             </a>
           </div>
           <p class="terminal" role="note">
-            Install + configure:
+            Install for every agent on this machine:
             <code>curl -fsSL https://opencode.finance/install.sh | bash</code>
+            or <code>npx opencode-finance-skill install</code>
           </p>
           <dl class="metrics" aria-label="Workflow details">
             {metrics.map((metric) => (
@@ -111,8 +114,8 @@ const points = [
           </dl>
         </div>
 
-        <aside class="hero-panel" aria-label="Pipeline blueprint">
-          <p class="panel-label">Pipeline</p>
+        <aside class="hero-panel" aria-label="How it works">
+          <p class="panel-label">How it works</p>
           <ol>
             {steps.map((step) => (
               <li>{step}</li>
@@ -133,9 +136,10 @@ const points = [
       <section id="reports" class="reports" aria-labelledby="reports-title">
         <header>
           <p class="kicker">Sample reports</p>
-          <h2 id="reports-title">Live preview tiles</h2>
+          <h2 id="reports-title">Earlier report examples</h2>
           <p class="intro">
-            Current examples are sourced from the same report pipeline and rendered directly from the PDF artifacts.
+            These PDFs came from the earlier opencode-finance report pipeline. The skill now writes markdown reports and
+            exports a PDF only when you ask for one.
           </p>
         </header>
 
