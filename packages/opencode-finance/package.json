@@ -3,37 +3,24 @@
   "name": "opencode-finance",
   "version": "1.2.8",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/bilalbayram/opencode-finance"
   },
-  "files": ["dist", "README.md", "openclaw.plugin.json", "skills"],
-  "openclaw": {
-    "extensions": ["./dist/openclaw/index.cjs"]
-  },
+  "files": [
+    "skill",
+    "README.md"
+  ],
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "node ./scripts/build.mjs",
-    "test": "bun run build && bun test ./test",
+    "test": "bun test ./test",
     "prepack": "bun run build && cp ../../README.md README.md",
     "postpack": "rm -f README.md"
   },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
-  },
   "dependencies": {
-    "@opencode-ai/plugin": "1.2.27",
-    "@opencode-ai/sdk": "1.2.27",
-    "@sinclair/typebox": "0.34.48",
-    "openclaw": "2026.3.13",
-    "pdf-lib": "1.17.1",
-    "xdg-basedir": "5.1.0",
+    "fast-xml-parser": "5.3.0",
     "zod": "4.1.8"
   },
   "devDependencies": {
@@ -42,5 +29,9 @@
     "@types/node": "22.13.9",
     "@typescript/native-preview": "7.0.0-dev.20251207.1",
     "typescript": "5.8.2"
+  },
+  "description": "Finance data skill for coding agents: SEC EDGAR filings, XBRL fundamentals, insider trades and prices from primary sources.",
+  "bin": {
+    "fin": "./skill/scripts/fin.mjs"
   }
 }

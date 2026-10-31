@@ -20,8 +20,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Plugin typecheck
+      - name: Typecheck
         run: bun run --cwd packages/opencode-finance typecheck
 
-      - name: Plugin build
-        run: bun run --cwd packages/opencode-finance build
+      - name: Test (includes the committed bundle check)
+        run: bun run --cwd packages/opencode-finance test

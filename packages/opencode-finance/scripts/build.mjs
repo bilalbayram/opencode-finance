@@ -1,57 +1,32 @@
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs"
+import { chmodSync, readFileSync, rmSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url))
-const packageDir = path.resolve(scriptDir, "..")
-const srcDir = path.join(packageDir, "src")
-const distDir = path.join(packageDir, "dist")
+const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const flag = process.argv.indexOf("--outfile")
+const outfile = flag > 0 ? path.resolve(process.argv[flag + 1]) : path.join(packageDir, "skill", "scripts", "fin.mjs")
+const { version } = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8"))
 
-rmSync(distDir, { force: true, recursive: true })
+rmSync(outfile, { force: true })
 
-const tsc = spawnSync("bun", ["x", "tsc", "-p", "tsconfig.json"], {
-  cwd: packageDir,
-  stdio: "inherit",
-})
-
-if (tsc.status !== 0) {
-  process.exit(tsc.status ?? 1)
-}
-
-const openClawBundle = spawnSync(
+// One self-contained file so the skill folder runs anywhere Node 20+ is installed, with no npm install.
+const build = spawnSync(
   "bun",
-  ["build", "./src/openclaw/index.ts", "--outfile", "./dist/openclaw/index.cjs", "--target", "node", "--format", "cjs", "--packages", "external"],
-  {
-    cwd: packageDir,
-    stdio: "inherit",
-  },
+  [
+    "build",
+    "./src/cli/main.ts",
+    "--outfile",
+    outfile,
+    "--target",
+    "node",
+    "--format",
+    "esm",
+    "--define",
+    `process.env.FIN_VERSION=${JSON.stringify(version)}`,
+  ],
+  { cwd: packageDir, stdio: "inherit" },
 )
 
-if (openClawBundle.status !== 0) {
-  process.exit(openClawBundle.status ?? 1)
-}
-
-copyRuntimeAssets(srcDir)
-
-function copyRuntimeAssets(directory) {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const source = path.join(directory, entry.name)
-
-    if (entry.isDirectory()) {
-      copyRuntimeAssets(source)
-      continue
-    }
-
-    if (!shouldCopyAsset(entry.name)) continue
-
-    const relative = path.relative(srcDir, source)
-    const target = path.join(distDir, relative)
-    mkdirSync(path.dirname(target), { recursive: true })
-    cpSync(source, target)
-  }
-}
-
-function shouldCopyAsset(filename) {
-  return filename.endsWith(".txt") || filename.endsWith(".SKILL.md") || filename === "SKILL.md"
-}
+if (build.status !== 0) process.exit(build.status ?? 1)
+chmodSync(outfile, 0o755)
