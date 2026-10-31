@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode-finance",
-  "version": "1.2.8",
+  "name": "opencode-finance-skill",
+  "version": "2.0.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -30,8 +30,26 @@
     "@typescript/native-preview": "7.0.0-dev.20251207.1",
     "typescript": "5.8.2"
   },
-  "description": "Finance data skill for coding agents: SEC EDGAR filings, XBRL fundamentals, insider trades and prices from primary sources.",
+  "description": "Finance skill for coding agents: SEC EDGAR filings, XBRL fundamentals, insider trades and prices from primary sources, with every number cited.",
   "bin": {
-    "fin": "./skill/scripts/fin.mjs"
+    "fin": "./skill/scripts/fin.mjs",
+    "opencode-finance-skill": "./skill/scripts/fin.mjs"
+  },
+  "homepage": "https://opencode.finance",
+  "keywords": [
+    "agent-skills",
+    "skill",
+    "sec",
+    "edgar",
+    "xbrl",
+    "finance",
+    "claude-code",
+    "codex",
+    "opencode",
+    "cursor",
+    "gemini-cli"
+  ],
+  "engines": {
+    "node": ">=20"
   }
 }

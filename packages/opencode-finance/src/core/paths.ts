@@ -1,11 +1,16 @@
 import os from "os"
 import path from "path"
 
-const APP = "finance"
+const APP = "opencode-finance"
+
+// $HOME first, as Node does; Bun's os.homedir() ignores it, which matters for tests and sandboxes.
+export function homeDir() {
+  return process.env.HOME?.trim() || process.env.USERPROFILE?.trim() || os.homedir()
+}
 
 function xdg(variable: string, fallback: string) {
   const value = process.env[variable]?.trim()
-  return value && path.isAbsolute(value) ? value : path.join(os.homedir(), fallback)
+  return value && path.isAbsolute(value) ? value : path.join(homeDir(), fallback)
 }
 
 export const Paths = {

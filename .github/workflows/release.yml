@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           bun run --cwd packages/opencode-finance typecheck
-          bun run --cwd packages/opencode-finance build
+          bun run --cwd packages/opencode-finance test
 
       - name: Publish to npm
         if: steps.determine.outputs.changed == 'true'

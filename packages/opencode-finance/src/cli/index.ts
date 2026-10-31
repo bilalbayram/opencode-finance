@@ -1,3 +1,4 @@
+import path from "path"
 import z from "zod"
 import {
   CREDENTIAL_PROVIDERS,
@@ -8,7 +9,7 @@ import {
   setCredential,
 } from "../core/credentials"
 import { SourceCollector } from "../core/envelope"
-import { Paths } from "../core/paths"
+import { Paths, homeDir } from "../core/paths"
 import { INTERVALS, RANGES, price } from "../sources/price"
 import { companyProfile } from "../sources/sec/company"
 import { document } from "../sources/sec/document"
@@ -16,6 +17,7 @@ import { METRICS, concept, facts, frames } from "../sources/sec/facts"
 import { filings } from "../sources/sec/filings"
 import { insiders } from "../sources/sec/insiders"
 import { search } from "../sources/sec/search"
+import { InstallError, bundledSkillDir, detectTargets, installSkill, legacyNotices, uninstallSkill, type Target } from "../install"
 import { UsageError, buildToolArgs, splitArgv } from "./args"
 
 type RunContext = { collector: SourceCollector; refresh: boolean; signal: AbortSignal }
@@ -169,7 +171,8 @@ function usage() {
     "",
     ...COMMANDS.map((item) => `  ${usageLine(item).padEnd(width)}  ${item.summary}`),
     "",
-    "Credentials:",
+    "Setup:",
+    "  fin install [--agents agents,claude,gemini] [--dir <skills dir>] [--uninstall] [--sec-identity <value>]",
     "  fin auth list | fin auth set <provider> <value> | fin auth remove <provider>",
     "",
     "Global options:",
@@ -240,7 +243,79 @@ async function runAuth(argv: string[], io: Io) {
   throw new UsageError(`unknown auth action "${action}". Use list, set or remove.`)
 }
 
-export async function runCli(argv: string[], io: Io = defaultIo, signal = new AbortController().signal) {
+export type Prompt = (question: string) => Promise<string>
+
+async function ttyPrompt(question: string) {
+  const readline = await import("readline/promises")
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  try {
+    return await rl.question(question)
+  } finally {
+    rl.close()
+  }
+}
+
+async function runInstall(argv: string[], io: Io, prompt: Prompt | undefined) {
+  const { positional, flags } = splitArgv(argv)
+  const known = new Set(["agents", "dir", "uninstall", "sec-identity", "no-prompt", "prompt", "source"])
+  for (const key of flags.keys()) if (!known.has(key)) throw new UsageError(`unknown option --${key} for fin install`)
+  if (positional.length) throw new UsageError(`unexpected argument: ${positional.join(" ")}`)
+  const last = (key: string) => flags.get(key)?.at(-1)
+
+  // --dir alone means "only there"; otherwise install into every detected agent.
+  let targets: Target[] = flags.has("dir") && !flags.has("agents") ? [] : await detectTargets()
+  const wanted = flags.get("agents")?.flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean)
+  if (wanted?.length) {
+    const ids = ["agents", "claude", "gemini"]
+    const unknown = wanted.filter((id) => !ids.includes(id))
+    if (unknown.length) throw new UsageError(`unknown agent target(s): ${unknown.join(", ")}. Use ${ids.join(", ")}`)
+    const home = homeDir()
+    const all: Target[] = [
+      { id: "agents", label: "Codex, Cursor, Copilot CLI, OpenCode", dir: path.join(home, ".agents", "skills") },
+      { id: "claude", label: "Claude Code", dir: path.join(home, ".claude", "skills") },
+      { id: "gemini", label: "Gemini CLI", dir: path.join(home, ".gemini", "skills") },
+    ]
+    targets = all.filter((target) => wanted.includes(target.id))
+  }
+  for (const dir of flags.get("dir") ?? []) targets.push({ id: "custom", label: "Custom", dir: path.resolve(dir) })
+
+  const results = []
+  for (const target of targets) {
+    results.push(last("uninstall") === "true" ? await uninstallSkill(target) : await installSkill(last("source") ?? bundledSkillDir(), target))
+  }
+  const lines = results.map((item) => `  ${item.status.padEnd(9)} ${item.path}  (${item.target.label})`)
+
+  if (last("uninstall") !== "true") {
+    const identity = last("sec-identity")?.trim()
+    if (identity) await setCredential("sec-edgar", identity)
+    const current = await credentialStatus("sec-edgar")
+    if (!current && prompt && last("prompt") !== "false") {
+      io.stderr("SEC asks every client to identify itself. Your name and email are sent only to sec.gov as the User-Agent.")
+      const answer = (await prompt('SEC identity, e.g. "Jane Doe jane@example.com" (leave empty to skip): ')).trim()
+      if (answer) await setCredential("sec-edgar", answer)
+    }
+    const after = await credentialStatus("sec-edgar")
+    lines.push(
+      "",
+      after
+        ? `SEC identity: set (${after.origin})`
+        : `SEC identity: not set. Before using SEC commands run:\n  node ${path.join(results[0]?.path ?? bundledSkillDir(), "scripts", "fin.mjs")} auth set sec-edgar "Your Name you@example.com"`,
+    )
+    const notices = await legacyNotices()
+    if (notices.length) lines.push("", "Old plugin leftovers:", ...notices.map((notice) => `  - ${notice}`))
+    lines.push("", "Restart your agent, then ask it for company data or a report, e.g. \"research AAPL\".")
+  }
+
+  io.stdout([last("uninstall") === "true" ? "Removed opencode-finance:" : `Installed opencode-finance ${VERSION}:`, ...lines].join("\n"))
+  return 0
+}
+
+export async function runCli(
+  argv: string[],
+  io: Io = defaultIo,
+  signal = new AbortController().signal,
+  prompt: Prompt | undefined = process.stdin.isTTY ? ttyPrompt : undefined,
+) {
   try {
     const [first] = argv
     if (!first || first === "help" || first === "--help" || first === "-h") {
@@ -252,6 +327,7 @@ export async function runCli(argv: string[], io: Io = defaultIo, signal = new Ab
       return 0
     }
     if (first === "auth") return await runAuth(argv.slice(1), io)
+    if (first === "install") return await runInstall(argv.slice(1), io, prompt)
 
     const item = findCommand(argv)
     if (!item) {
@@ -283,7 +359,7 @@ export async function runCli(argv: string[], io: Io = defaultIo, signal = new Ab
     return 0
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const code = error instanceof UsageError ? 2 : error instanceof MissingCredentialError ? 3 : 1
+    const code = error instanceof UsageError || error instanceof InstallError ? 2 : error instanceof MissingCredentialError ? 3 : 1
     io.stderr(JSON.stringify({ error: message, code }, null, 2))
     return code
   }

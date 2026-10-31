@@ -1,5 +1,21 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
+var __create = Object.create;
+var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __toESM = (mod, isNodeMode, target) => {
+  target = mod != null ? __create(__getProtoOf(mod)) : {};
+  const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  for (let key of __getOwnPropNames(mod))
+    if (!__hasOwnProp.call(to, key))
+      __defProp(to, key, {
+        get: () => mod[key],
+        enumerable: true
+      });
+  return to;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
@@ -9,6 +25,10 @@ var __export = (target, all) => {
       set: (newValue) => all[name] = () => newValue
     });
 };
+var __require = /* @__PURE__ */ createRequire(import.meta.url);
+
+// src/cli/index.ts
+import path5 from "path";
 
 // ../../node_modules/.bun/zod@4.1.8/node_modules/zod/v4/classic/external.js
 var exports_external = {};
@@ -12335,10 +12355,13 @@ import path2 from "path";
 // src/core/paths.ts
 import os from "os";
 import path from "path";
-var APP = "finance";
+var APP = "opencode-finance";
+function homeDir() {
+  return process.env.HOME?.trim() || process.env.USERPROFILE?.trim() || os.homedir();
+}
 function xdg(variable, fallback) {
   const value = process.env[variable]?.trim();
-  return value && path.isAbsolute(value) ? value : path.join(os.homedir(), fallback);
+  return value && path.isAbsolute(value) ? value : path.join(homeDir(), fallback);
 }
 var Paths = {
   get config() {
@@ -14864,6 +14887,86 @@ async function search(ctx, query, options) {
   return { query, company: company ?? null, total_matches: total, count: results.length, results };
 }
 
+// src/install.ts
+import fs3 from "fs/promises";
+import path4 from "path";
+import { fileURLToPath } from "url";
+var SKILL_NAME = "opencode-finance";
+function exists(file2) {
+  return fs3.access(file2).then(() => true, () => false);
+}
+async function onPath(command) {
+  for (const dir of (process.env.PATH ?? "").split(path4.delimiter).filter(Boolean)) {
+    if (await exists(path4.join(dir, command)))
+      return true;
+  }
+  return false;
+}
+async function detectTargets(home = homeDir()) {
+  const targets = [{ id: "agents", label: "Codex, Cursor, Copilot CLI, OpenCode", dir: path4.join(home, ".agents", "skills") }];
+  if (await exists(path4.join(home, ".claude")) || await onPath("claude")) {
+    targets.push({ id: "claude", label: "Claude Code", dir: path4.join(home, ".claude", "skills") });
+  }
+  if (await exists(path4.join(home, ".gemini")) || await onPath("gemini")) {
+    targets.push({ id: "gemini", label: "Gemini CLI", dir: path4.join(home, ".gemini", "skills") });
+  }
+  return targets;
+}
+function bundledSkillDir() {
+  return path4.resolve(path4.dirname(fileURLToPath(import.meta.url)), "..");
+}
+async function skillName(dir) {
+  const text2 = await fs3.readFile(path4.join(dir, "SKILL.md"), "utf8").catch(() => {
+    return;
+  });
+  return text2?.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+}
+
+class InstallError extends Error {
+}
+async function installSkill(source, target) {
+  if (await skillName(source) !== SKILL_NAME)
+    throw new InstallError(`${source} is not the ${SKILL_NAME} skill folder`);
+  const destination = path4.join(target.dir, SKILL_NAME);
+  if (path4.resolve(destination) === path4.resolve(source))
+    return { target, path: destination, status: "current" };
+  const existing = await exists(destination);
+  if (existing && await skillName(destination) !== SKILL_NAME) {
+    throw new InstallError(`${destination} exists and is not ${SKILL_NAME}; move it aside and run again`);
+  }
+  await fs3.mkdir(target.dir, { recursive: true });
+  const staging = `${destination}.tmp-${process.pid}`;
+  await fs3.rm(staging, { recursive: true, force: true });
+  await fs3.cp(source, staging, { recursive: true });
+  await fs3.rm(destination, { recursive: true, force: true });
+  await fs3.rename(staging, destination);
+  return { target, path: destination, status: existing ? "updated" : "installed" };
+}
+async function uninstallSkill(target) {
+  const destination = path4.join(target.dir, SKILL_NAME);
+  if (!await exists(destination))
+    return { target, path: destination, status: "absent" };
+  if (await skillName(destination) !== SKILL_NAME)
+    throw new InstallError(`${destination} is not ${SKILL_NAME}; leaving it alone`);
+  await fs3.rm(destination, { recursive: true, force: true });
+  return { target, path: destination, status: "removed" };
+}
+async function legacyNotices(home = homeDir()) {
+  const notices = [];
+  const config2 = process.env.XDG_CONFIG_HOME?.trim() || path4.join(home, ".config");
+  for (const file2 of ["opencode.json", "opencode.jsonc"].map((name) => path4.join(config2, "opencode", name))) {
+    const text2 = await fs3.readFile(file2, "utf8").catch(() => "");
+    if (/"opencode-finance(@[^"]*)?"/.test(text2)) {
+      notices.push(`${file2} still loads the old "opencode-finance" plugin. Remove it from "plugin" to avoid duplicate finance tools.`);
+    }
+  }
+  for (const dir of [path4.join(home, ".opencode", "skills", "finance-comprehensive-report"), path4.join(config2, "opencode", "skills", "finance-comprehensive-report")]) {
+    if (await exists(dir))
+      notices.push(`${dir} is the old report skill and can be deleted.`);
+  }
+  return notices;
+}
+
 // src/cli/args.ts
 class UsageError extends Error {
 }
@@ -15092,7 +15195,7 @@ var COMMANDS = [
     run: (args, ctx) => price(ctx, args.symbol, args)
   })
 ];
-var VERSION = "1.2.8";
+var VERSION = "2.0.0";
 var defaultIo = {
   stdout: (text2) => process.stdout.write(text2.endsWith(`
 `) ? text2 : `${text2}
@@ -15111,7 +15214,8 @@ function usage() {
     "",
     ...COMMANDS.map((item) => `  ${usageLine(item).padEnd(width)}  ${item.summary}`),
     "",
-    "Credentials:",
+    "Setup:",
+    "  fin install [--agents agents,claude,gemini] [--dir <skills dir>] [--uninstall] [--sec-identity <value>]",
     "  fin auth list | fin auth set <provider> <value> | fin auth remove <provider>",
     "",
     "Global options:",
@@ -15175,7 +15279,70 @@ async function runAuth(argv, io) {
   }
   throw new UsageError(`unknown auth action "${action}". Use list, set or remove.`);
 }
-async function runCli(argv, io = defaultIo, signal = new AbortController().signal) {
+async function ttyPrompt(question) {
+  const readline = await import("readline/promises");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+async function runInstall(argv, io, prompt) {
+  const { positional, flags } = splitArgv(argv);
+  const known = new Set(["agents", "dir", "uninstall", "sec-identity", "no-prompt", "prompt", "source"]);
+  for (const key of flags.keys())
+    if (!known.has(key))
+      throw new UsageError(`unknown option --${key} for fin install`);
+  if (positional.length)
+    throw new UsageError(`unexpected argument: ${positional.join(" ")}`);
+  const last = (key) => flags.get(key)?.at(-1);
+  let targets = flags.has("dir") && !flags.has("agents") ? [] : await detectTargets();
+  const wanted = flags.get("agents")?.flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
+  if (wanted?.length) {
+    const ids = ["agents", "claude", "gemini"];
+    const unknown2 = wanted.filter((id) => !ids.includes(id));
+    if (unknown2.length)
+      throw new UsageError(`unknown agent target(s): ${unknown2.join(", ")}. Use ${ids.join(", ")}`);
+    const home = homeDir();
+    const all = [
+      { id: "agents", label: "Codex, Cursor, Copilot CLI, OpenCode", dir: path5.join(home, ".agents", "skills") },
+      { id: "claude", label: "Claude Code", dir: path5.join(home, ".claude", "skills") },
+      { id: "gemini", label: "Gemini CLI", dir: path5.join(home, ".gemini", "skills") }
+    ];
+    targets = all.filter((target) => wanted.includes(target.id));
+  }
+  for (const dir of flags.get("dir") ?? [])
+    targets.push({ id: "custom", label: "Custom", dir: path5.resolve(dir) });
+  const results = [];
+  for (const target of targets) {
+    results.push(last("uninstall") === "true" ? await uninstallSkill(target) : await installSkill(last("source") ?? bundledSkillDir(), target));
+  }
+  const lines = results.map((item) => `  ${item.status.padEnd(9)} ${item.path}  (${item.target.label})`);
+  if (last("uninstall") !== "true") {
+    const identity = last("sec-identity")?.trim();
+    if (identity)
+      await setCredential("sec-edgar", identity);
+    const current = await credentialStatus("sec-edgar");
+    if (!current && prompt && last("prompt") !== "false") {
+      io.stderr("SEC asks every client to identify itself. Your name and email are sent only to sec.gov as the User-Agent.");
+      const answer = (await prompt('SEC identity, e.g. "Jane Doe jane@example.com" (leave empty to skip): ')).trim();
+      if (answer)
+        await setCredential("sec-edgar", answer);
+    }
+    const after = await credentialStatus("sec-edgar");
+    lines.push("", after ? `SEC identity: set (${after.origin})` : `SEC identity: not set. Before using SEC commands run:
+  node ${path5.join(results[0]?.path ?? bundledSkillDir(), "scripts", "fin.mjs")} auth set sec-edgar "Your Name you@example.com"`);
+    const notices = await legacyNotices();
+    if (notices.length)
+      lines.push("", "Old plugin leftovers:", ...notices.map((notice) => `  - ${notice}`));
+    lines.push("", 'Restart your agent, then ask it for company data or a report, e.g. "research AAPL".');
+  }
+  io.stdout([last("uninstall") === "true" ? "Removed opencode-finance:" : `Installed opencode-finance ${VERSION}:`, ...lines].join(`
+`));
+  return 0;
+}
+async function runCli(argv, io = defaultIo, signal = new AbortController().signal, prompt = process.stdin.isTTY ? ttyPrompt : undefined) {
   try {
     const [first] = argv;
     if (!first || first === "help" || first === "--help" || first === "-h") {
@@ -15188,6 +15355,8 @@ async function runCli(argv, io = defaultIo, signal = new AbortController().signa
     }
     if (first === "auth")
       return await runAuth(argv.slice(1), io);
+    if (first === "install")
+      return await runInstall(argv.slice(1), io, prompt);
     const item = findCommand(argv);
     if (!item) {
       const group = COMMANDS.filter((entry) => entry.path[0] === first);
@@ -15218,7 +15387,7 @@ ${zod_default.prettifyError(checked.error)}`);
     return 0;
   } catch (error45) {
     const message = error45 instanceof Error ? error45.message : String(error45);
-    const code = error45 instanceof UsageError ? 2 : error45 instanceof MissingCredentialError ? 3 : 1;
+    const code = error45 instanceof UsageError || error45 instanceof InstallError ? 2 : error45 instanceof MissingCredentialError ? 3 : 1;
     io.stderr(JSON.stringify({ error: message, code }, null, 2));
     return code;
   }

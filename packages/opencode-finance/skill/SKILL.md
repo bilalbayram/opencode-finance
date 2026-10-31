@@ -1,9 +1,9 @@
 ---
-name: finance
+name: opencode-finance
 description: Research public companies with primary-source data and cite every number. Use for fundamentals (revenue, margins, cash flow, balance sheet), SEC filings and their text, insider trades (Form 4), full-text search across filings, cross-company comparisons, stock prices, and writing company or equity research reports. Data comes straight from SEC EDGAR and is labelled official or unofficial.
 ---
 
-# Finance
+# OpenCode Finance
 
 `fin` below means `node <directory of this SKILL.md>/scripts/fin.mjs`. It needs Node 20 or newer and nothing else.
 

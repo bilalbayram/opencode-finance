@@ -6,10 +6,11 @@
       "name": "opencode",
     },
     "packages/opencode-finance": {
-      "name": "opencode-finance",
-      "version": "1.2.8",
+      "name": "opencode-finance-skill",
+      "version": "2.0.0",
       "bin": {
         "fin": "./skill/scripts/fin.mjs",
+        "opencode-finance-skill": "./skill/scripts/fin.mjs",
       },
       "dependencies": {
         "fast-xml-parser": "5.3.0",
@@ -25,7 +26,7 @@
     },
     "packages/web": {
       "name": "@opencode-ai/web",
-      "version": "1.0.3",
+      "version": "1.1.0",
       "dependencies": {
         "astro": "5.7.13",
       },
@@ -571,7 +572,7 @@
 
     "oniguruma-to-es": ["oniguruma-to-es@4.3.4", "", { "dependencies": { "oniguruma-parser": "^0.12.1", "regex": "^6.0.1", "regex-recursion": "^6.0.2" } }, "sha512-3VhUGN3w2eYxnTzHn+ikMI+fp/96KoRSVK9/kMTcFqj1NRDh2IhQCKvYxDnWePKRXY/AqH+Fuiyb7VHSzBjHfA=="],
 
-    "opencode-finance": ["opencode-finance@workspace:packages/opencode-finance"],
+    "opencode-finance-skill": ["opencode-finance-skill@workspace:packages/opencode-finance"],
 
     "p-limit": ["p-limit@6.2.0", "", { "dependencies": { "yocto-queue": "^1.1.1" } }, "sha512-kuUqqHNUqoIWp/c467RI4X6mmyuojY5jGutNU0wVTmEOOfcuwLqyMVoAi9MKi2Ak+5i9+nhmrK4ufZE8069kHA=="],
 

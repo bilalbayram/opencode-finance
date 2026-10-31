@@ -8,7 +8,7 @@ A finance skill for coding agents. It gives any agent that can read a `SKILL.md`
 
 This repository contains:
 
-- `packages/opencode-finance/skill`: the skill folder (`SKILL.md`, `references/`, and the bundled `scripts/fin.mjs`).
+- `packages/opencode-finance/skill`: the skill folder (`SKILL.md`, `references/`, and the bundled `scripts/fin.mjs`), published to npm as `opencode-finance-skill`.
 - `packages/opencode-finance/src`: source for `fin`.
 - `packages/web`: the marketing page and installer served at opencode.finance.
 
@@ -16,22 +16,32 @@ This repository contains:
 
 Requires Node 20 or newer.
 
-Copy `packages/opencode-finance/skill` into your agent's skills directory as `finance`, for example:
-
 ```bash
-git clone https://github.com/bilalbayram/opencode-finance
-cp -r opencode-finance/packages/opencode-finance/skill ~/.claude/skills/finance
+curl -fsSL https://opencode.finance/install.sh | bash
+# or
+npx opencode-finance-skill install
 ```
 
-Use your agent's skills directory in place of `~/.claude/skills`. For agents without skill support, point them at `SKILL.md`.
+The installer copies the skill into every agent it finds and asks once for the identity SEC requires from every client (your name and email, sent only to sec.gov):
 
-Then set the identity SEC requires from every client:
+| Folder | Read by |
+| --- | --- |
+| `~/.agents/skills/opencode-finance` | Codex, Cursor, Copilot CLI, OpenCode (always installed) |
+| `~/.claude/skills/opencode-finance` | Claude Code (when `~/.claude` or `claude` exists) |
+| `~/.gemini/skills/opencode-finance` | Gemini CLI (when `~/.gemini` or `gemini` exists) |
 
-```bash
-node ~/.claude/skills/finance/scripts/fin.mjs auth set sec-edgar "Jane Doe jane@example.com"
-```
+Options, passed after `bash -s --` for the curl form:
 
-or export `SEC_EDGAR_IDENTITY`. Credentials are stored in `~/.config/finance/credentials.json` with mode `0600`.
+- `--agents agents,claude,gemini` installs only into those folders.
+- `--dir <skills dir>` installs only into a folder of your choice, such as a project's `.agents/skills`.
+- `--sec-identity "Jane Doe jane@example.com"` sets the identity without prompting; `--no-prompt` skips the prompt.
+- `--uninstall` removes the skill from the same folders.
+
+Run the installer again to update. Credentials are stored in `~/.config/opencode-finance/credentials.json` with mode `0600`; `SEC_EDGAR_IDENTITY` overrides them.
+
+### Coming from the OpenCode plugin
+
+The `opencode-finance` npm plugin is frozen at 1.2.7 and no longer developed. The installer points out a leftover `opencode-finance` entry in your OpenCode `plugin` list and the old `finance-comprehensive-report` skill; remove them to avoid duplicate tools. It never edits your config itself. Your existing SEC identity from the plugin is picked up automatically.
 
 ## Commands
 
